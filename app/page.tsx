@@ -8,9 +8,9 @@ import {
   Send, StopCircle, User, Zap, 
   Brain, Image as ImageIcon, Table, Workflow, MessageSquare, 
   BookOpen, X, Paperclip, ChevronDown, 
-  Maximize, Columns, Grid2X2, Trash2, Code, GripVertical,
+  Maximize, Columns, Grid2X2, Trash2, GripVertical,
   Copy, Check, Download, FileSpreadsheet, Image as ImgIcon,
-  Plus, MessageSquareDashed, Layout, Menu, Edit3
+  Plus, MessageSquareDashed, Layout, Menu, Edit3, Terminal
 } from 'lucide-react';
 
 // ✅ 1. 初始化 Mermaid
@@ -22,9 +22,8 @@ mermaid.initialize({
 });
 
 // -----------------------------------------------------------------------------
-// 🧩 基础组件 (保持不变：Mermaid, TableWrapper, Typewriter)
+// 🧩 组件：流程图渲染器 (带复制图片功能)
 // -----------------------------------------------------------------------------
-
 const MermaidChart = ({ code }: { code: string }) => {
   const [svg, setSvg] = useState('');
   const [error, setError] = useState(false);
@@ -101,6 +100,40 @@ const MermaidChart = ({ code }: { code: string }) => {
   );
 };
 
+// -----------------------------------------------------------------------------
+// 📝 组件：代码块 (新增：支持一键复制)
+// -----------------------------------------------------------------------------
+const CodeBlock = ({ children, className }: { children: React.ReactNode, className?: string }) => {
+  const [copied, setCopied] = useState(false);
+  
+  const handleCopy = () => {
+    navigator.clipboard.writeText(String(children));
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  };
+
+  return (
+    <div className="relative group my-2 rounded-lg overflow-hidden border border-slate-200 bg-slate-50">
+      <div className="flex items-center justify-between px-3 py-1.5 bg-slate-100 border-b border-slate-200">
+        <div className="flex items-center gap-1.5">
+          <Terminal size={12} className="text-slate-400"/>
+          <span className="text-[10px] font-mono text-slate-500">{className?.replace('language-', '') || 'code'}</span>
+        </div>
+        <button onClick={handleCopy} className="flex items-center gap-1 text-[10px] text-slate-500 hover:text-blue-600 transition-colors">
+          {copied ? <Check size={12} className="text-green-500"/> : <Copy size={12}/>}
+          {copied ? '已复制' : '复制'}
+        </button>
+      </div>
+      <div className="p-3 overflow-x-auto text-xs font-mono leading-relaxed">
+        <code className={className}>{children}</code>
+      </div>
+    </div>
+  );
+};
+
+// -----------------------------------------------------------------------------
+// 📊 组件：表格包装器 (支持富文本复制)
+// -----------------------------------------------------------------------------
 const TableWrapper = ({ children }: { children: React.ReactNode }) => {
   const [copied, setCopied] = useState(false);
   const tableRef = useRef<HTMLDivElement>(null);
@@ -129,6 +162,9 @@ const TableWrapper = ({ children }: { children: React.ReactNode }) => {
   );
 }
 
+// -----------------------------------------------------------------------------
+// ✨ 打字机效果 (包含代码块拦截渲染)
+// -----------------------------------------------------------------------------
 const TypewriterEffect = ({ content, isTyping }: { content: string, isTyping: boolean }) => {
   const [displayedContent, setDisplayedContent] = useState('');
   useEffect(() => {
@@ -150,7 +186,11 @@ const TypewriterEffect = ({ content, isTyping }: { content: string, isTyping: bo
     td: ({...props}: any) => <td className="px-4 py-2 border-b border-slate-100 border-r last:border-0" {...props} />,
     code({node, inline, className, children, ...props}: any) {
       const isMermaid = /language-mermaid/.test(className || '');
+      // Mermaid 处理
       if (!inline && isMermaid && !isTyping) return <MermaidChart code={String(children)} />;
+      // 普通代码块 -> 使用新的 CodeBlock 组件 (带复制)
+      if (!inline) return <CodeBlock className={className}>{children}</CodeBlock>;
+      // 行内代码
       return <code className={`${className} bg-slate-100 rounded px-1.5 py-0.5 text-pink-600 font-mono text-xs`} {...props}>{children}</code>;
     }
   };
@@ -164,7 +204,7 @@ const TypewriterEffect = ({ content, isTyping }: { content: string, isTyping: bo
 };
 
 // -----------------------------------------------------------------------------
-// 🛠️ 工具配置
+// 🛠️ 工具配置 (修正 Research 模型)
 // -----------------------------------------------------------------------------
 const TOOLS = [
   { id: 'chat', name: '全能助手', icon: <MessageSquare size={16} />, model: 'gemini-3-flash-preview', color: 'text-blue-600', bg: 'bg-blue-50', border: 'border-blue-200', placeholder: '有什么我可以帮你的吗？', systemPrompt: `全能助手。简练回答。结尾生成3个追问 ///Q1|Q2|Q3` },
@@ -172,7 +212,8 @@ const TOOLS = [
   { id: 'flow', name: '流程图设计', icon: <Workflow size={16} />, model: 'gemini-3-pro-preview', color: 'text-orange-600', bg: 'bg-orange-50', border: 'border-orange-200', placeholder: '描述流程，我来画图...', systemPrompt: `流程图专家。Mermaid语法。必须包裹在 \`\`\`mermaid ... \`\`\` 中。 /// 优化流程 | 变为时序图 | 导出SVG` },
   { id: 'data', name: '数据制表', icon: <Table size={16} />, model: 'gemini-3-flash-preview', color: 'text-green-600', bg: 'bg-green-50', border: 'border-green-200', placeholder: '输入数据，整理表格...', systemPrompt: `数据分析师。整理为 Markdown 表格。数字列右对齐(---:)。 /// 可视化 | 导出Excel | 深度分析` },
   { id: 'notebook', name: '多模态分析', icon: <BookOpen size={16} />, model: 'gemini-3-pro-preview', color: 'text-emerald-600', bg: 'bg-emerald-50', border: 'border-emerald-200', placeholder: '拖入 代码/PDF/图片...', systemPrompt: `全能分析助手。阅读上传的文件。 /// 解释代码 | 总结文档 | 提取关键点` },
-  { id: 'research', name: '深度思考', icon: <Brain size={16} />, model: 'deep-research-pro-preview-12-2025', color: 'text-indigo-600', bg: 'bg-indigo-50', border: 'border-indigo-200', placeholder: '深度推理任务...', systemPrompt: `深度推理专家。一步步思考。 /// 追问1 | 追问2 | 追问3` },
+  // 👇 修正：使用真实的思考模型 (Google AI Studio 中可用的)
+  { id: 'research', name: '深度思考', icon: <Brain size={16} />, model: 'gemini-3-flash-preview', color: 'text-indigo-600', bg: 'bg-indigo-50', border: 'border-indigo-200', placeholder: '深度推理任务...', systemPrompt: `深度推理专家。一步步思考。 /// 追问1 | 追问2 | 追问3` },
 ];
 
 interface Message {
@@ -183,16 +224,15 @@ interface Message {
   isTyping?: boolean;
 }
 
-// 🆕 会话结构定义
 interface Session {
   id: string;
   title: string;
-  histories: Record<string, Message[]>; // 每个 session 包含所有工具的历史
+  histories: Record<string, Message[]>;
   createdAt: number;
 }
 
 // -----------------------------------------------------------------------------
-// 📦 ToolPanel 组件 (保持不变)
+// 📦 ToolPanel (修改：拖拽后直接执行)
 // -----------------------------------------------------------------------------
 const ToolPanel = ({ 
   panelId, currentToolId, history, onSwitchTool, onSend, onClearHistory, isGenerating 
@@ -234,13 +274,19 @@ const ToolPanel = ({
     if (textareaRef.current) textareaRef.current.style.height = 'auto';
   };
 
+  // 🖱️ 拖拽逻辑
   const handleDragStart = (e: React.DragEvent, content: string) => { e.dataTransfer.setData('text/plain', content); e.dataTransfer.effectAllowed = 'copy'; };
   const handleDragOver = (e: React.DragEvent) => { e.preventDefault(); setIsDragOver(true); };
   const handleDragLeave = (e: React.DragEvent) => { if (e.currentTarget.contains(e.relatedTarget as Node)) return; setIsDragOver(false); };
+  
+  // 🔥 核心修改：Drop 后直接发送
   const handleDrop = (e: React.DragEvent) => {
     e.preventDefault(); e.stopPropagation(); setIsDragOver(false);
     const content = e.dataTransfer.getData('text/plain');
-    if (content) setInput(prev => prev ? `${prev}\n> ${content}\n` : content);
+    if (content) {
+      // 直接触发发送逻辑，不走 setInput -> 等待 -> 点击按钮
+      onSend(tool.id, content, []); 
+    }
   };
 
   return (
@@ -266,7 +312,7 @@ const ToolPanel = ({
         {history.length === 0 && (
           <div className="h-full flex flex-col items-center justify-center text-slate-300 opacity-60">
             <div className="scale-150 mb-2">{tool.icon}</div>
-            <p className="text-xs font-medium">拖拽气泡到这里...</p>
+            <p className="text-xs font-medium">拖拽气泡到这里，立即执行...</p>
           </div>
         )}
         {history.map((msg, idx) => (
@@ -320,7 +366,7 @@ const ToolPanel = ({
             ref={textareaRef}
             rows={1}
             className={`flex-1 bg-slate-50 border-none rounded-lg px-3 py-2 text-xs sm:text-sm focus:ring-1 focus:ring-blue-500 outline-none resize-none overflow-y-auto ${isDragOver ? 'bg-white ring-2 ring-indigo-300 placeholder:text-indigo-400' : ''}`}
-            placeholder={isDragOver ? "松手粘贴到这里..." : tool.placeholder}
+            placeholder={isDragOver ? "松手，立即执行..." : tool.placeholder}
             value={input}
             onChange={(e) => setInput(e.target.value)}
             onKeyDown={(e) => { if(e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handlePanelSend(); } }}
@@ -336,21 +382,20 @@ const ToolPanel = ({
 };
 
 // -----------------------------------------------------------------------------
-// 🚀 主页面 (升级：会话管理 + 侧边栏)
+// 🚀 主页面
 // -----------------------------------------------------------------------------
 export default function WorkstationPage() {
   const [layout, setLayout] = useState<'single' | 'split' | 'grid'>('grid');
   const [slots, setSlots] = useState(['chat', 'data', 'flow', 'image']);
   const [isGenerating, setIsGenerating] = useState(false);
   
-  // 🆕 会话管理状态
+  // 会话管理
   const [sessions, setSessions] = useState<Session[]>([
     { id: '1', title: '新的话题', histories: { chat: [], image: [], flow: [], data: [], notebook: [], research: [] }, createdAt: Date.now() }
   ]);
   const [currentSessionId, setCurrentSessionId] = useState<string>('1');
   const [showSidebar, setShowSidebar] = useState(true);
 
-  // 获取当前会话
   const currentSession = sessions.find(s => s.id === currentSessionId) || sessions[0];
 
   const parseResponse = (text: string) => {
@@ -361,90 +406,51 @@ export default function WorkstationPage() {
     return { cleanContent: text.substring(0, idx).trim(), suggestions: suggestions.map(s => s.trim()).filter(s => s) };
   };
 
-  // 🆕 创建新会话
   const createNewSession = () => {
     const newId = Date.now().toString();
-    const newSession: Session = {
-      id: newId,
-      title: '新对话', // 初始标题
-      histories: { chat: [], image: [], flow: [], data: [], notebook: [], research: [] },
-      createdAt: Date.now()
-    };
+    const newSession: Session = { id: newId, title: '新对话', histories: { chat: [], image: [], flow: [], data: [], notebook: [], research: [] }, createdAt: Date.now() };
     setSessions(prev => [newSession, ...prev]);
     setCurrentSessionId(newId);
   };
 
-  // 🆕 自动生成标题 (后台调用)
   const generateTitle = async (sessionId: string, firstMessage: string) => {
     try {
       const res = await fetch('/api/chat/gemini', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          message: `请根据这句话总结一个非常简短的标题(5-10字以内)，不要任何标点符号：${firstMessage}`,
-          modelName: 'gemini-3-flash-preview'
-        })
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ message: `请根据这句话总结一个非常简短的标题(5-10字以内)，不要任何标点符号：${firstMessage}`, modelName: 'gemini-3-flash-preview' })
       });
       const reader = res.body?.getReader();
       const decoder = new TextDecoder();
       let title = '';
-      while (true) {
-        const { value, done } = await reader!.read();
-        if (done) break;
-        title += decoder.decode(value);
-      }
-      // 更新标题
+      while (true) { const { value, done } = await reader!.read(); if (done) break; title += decoder.decode(value); }
       setSessions(prev => prev.map(s => s.id === sessionId ? { ...s, title: title.trim() } : s));
     } catch (e) { console.error('Auto title failed', e); }
   };
 
-  // 📦 发送逻辑 (适配多会话)
   const handleGlobalSend = async (toolId: string, userText: string, files: any[]) => {
     const sessionId = currentSessionId;
-    
-    // 1. 检查是否是当前会话的第一条消息，如果是，触发自动起标题
     const isFirstMessage = Object.values(currentSession.histories).every(h => h.length === 0);
-    if (isFirstMessage && userText.length > 0) {
-      generateTitle(sessionId, userText);
-    }
+    if (isFirstMessage && userText.length > 0) generateTitle(sessionId, userText);
 
     const newMessage: Message = { role: 'user', content: userText, attachments: files };
-    
-    // 更新当前 Session 的状态
-    setSessions(prev => prev.map(s => {
-      if (s.id !== sessionId) return s;
-      return {
-        ...s,
-        histories: {
-          ...s.histories,
-          [toolId]: [...(s.histories[toolId] || []), newMessage, { role: 'assistant', content: '', isTyping: true }]
-        }
-      };
-    }));
-    
+    setSessions(prev => prev.map(s => s.id === sessionId ? { ...s, histories: { ...s.histories, [toolId]: [...(s.histories[toolId] || []), newMessage, { role: 'assistant', content: '', isTyping: true }] } } : s));
     setIsGenerating(true);
 
     try {
       const tool = TOOLS.find(t => t.id === toolId) || TOOLS[0];
-      // 获取当前 Session 的历史上下文
       const currentHistory = currentSession.histories[toolId] || [];
       const historyStr = currentHistory.slice(-6).map(m => `${m.role}: ${m.content}`).join('\n');
-
       const res = await fetch('/api/chat/gemini', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ message: userText, history: historyStr, files: files, modelName: tool.model, systemInstruction: tool.systemPrompt })
       });
-      
       const reader = res.body?.getReader();
       const decoder = new TextDecoder();
       let fullText = '';
-      
       while (true) {
         const { value, done } = await reader!.read();
         if (done) break;
         fullText += decoder.decode(value, { stream: true });
-        
-        // 实时更新 Session 状态
         setSessions(prev => prev.map(s => {
           if (s.id !== sessionId) return s;
           const newToolHistory = [...s.histories[toolId]];
@@ -457,7 +463,6 @@ export default function WorkstationPage() {
           return { ...s, histories: { ...s.histories, [toolId]: newToolHistory } };
         }));
       }
-
       const { cleanContent, suggestions } = parseResponse(fullText);
       setSessions(prev => prev.map(s => {
         if (s.id !== sessionId) return s;
@@ -465,13 +470,9 @@ export default function WorkstationPage() {
         newToolHistory[newToolHistory.length - 1] = { role: 'assistant', content: cleanContent, suggestions, isTyping: false };
         return { ...s, histories: { ...s.histories, [toolId]: newToolHistory } };
       }));
-
-    } catch (e) {
-      // 错误处理... (简化)
-    } finally { setIsGenerating(false); }
+    } catch (e) { console.error(e); } finally { setIsGenerating(false); }
   };
 
-  // 清空历史 (只清空当前 Session 的当前 Tool)
   const clearHistory = (toolId: string) => {
     setSessions(prev => prev.map(s => s.id === currentSessionId ? { ...s, histories: { ...s.histories, [toolId]: [] } } : s));
   };
@@ -481,43 +482,30 @@ export default function WorkstationPage() {
 
   return (
     <div className="h-[100dvh] bg-slate-100 flex font-sans text-slate-900 overflow-hidden">
-      
-      {/* 🆕 左侧话题栏 (Sidebar) */}
       <aside className={`${showSidebar ? 'w-64' : 'w-0'} bg-slate-900 text-slate-300 flex flex-col transition-all duration-300 overflow-hidden flex-none z-40`}>
         <div className="p-4 border-b border-slate-800 flex items-center justify-between">
           <div className="font-bold text-white tracking-tight flex items-center gap-2"><Layout size={18}/> 话题列表</div>
           <button onClick={() => createNewSession()} className="p-1.5 bg-blue-600 hover:bg-blue-500 text-white rounded-lg transition-colors"><Plus size={18}/></button>
         </div>
-        
         <div className="flex-1 overflow-y-auto p-2 space-y-1">
           {sessions.map(session => (
-            <button 
-              key={session.id}
-              onClick={() => setCurrentSessionId(session.id)}
-              className={`w-full text-left px-3 py-3 rounded-lg flex items-center gap-3 transition-all ${currentSessionId === session.id ? 'bg-slate-800 text-white shadow-sm ring-1 ring-slate-700' : 'hover:bg-slate-800/50 hover:text-white'}`}
-            >
+            <button key={session.id} onClick={() => setCurrentSessionId(session.id)} className={`w-full text-left px-3 py-3 rounded-lg flex items-center gap-3 transition-all ${currentSessionId === session.id ? 'bg-slate-800 text-white shadow-sm ring-1 ring-slate-700' : 'hover:bg-slate-800/50 hover:text-white'}`}>
               <MessageSquareDashed size={16} className={currentSessionId === session.id ? 'text-blue-400' : 'text-slate-500'} />
               <div className="flex-1 truncate text-sm font-medium">{session.title}</div>
             </button>
           ))}
         </div>
-
         <div className="p-4 border-t border-slate-800 text-xs text-slate-500 flex justify-between">
            <span>{sessions.length} 个活跃会话</span>
            <button onClick={() => setSessions(prev => prev.filter(s => s.id !== currentSessionId || prev.length === 1))} className="hover:text-red-400"><Trash2 size={14}/></button>
         </div>
       </aside>
-
-      {/* 右侧主区域 */}
       <div className="flex-1 flex flex-col h-full min-w-0">
         <header className="h-12 bg-white border-b border-slate-200 flex items-center justify-between px-4 flex-none z-50 shadow-sm">
           <div className="flex items-center gap-3">
             <button onClick={() => setShowSidebar(!showSidebar)} className="p-1.5 hover:bg-slate-100 rounded text-slate-500"><Menu size={18}/></button>
             <div className="w-px h-4 bg-slate-300"></div>
-            <div className="font-bold text-sm text-slate-700 flex items-center gap-2">
-               {currentSession.title} 
-               <Edit3 size={12} className="text-slate-300 cursor-pointer hover:text-blue-500"/>
-            </div>
+            <div className="font-bold text-sm text-slate-700 flex items-center gap-2">{currentSession.title} <Edit3 size={12} className="text-slate-300 cursor-pointer hover:text-blue-500"/></div>
           </div>
           <div className="flex bg-slate-100 p-0.5 rounded-lg border border-slate-200">
             {[{ id: 'single', icon: <Maximize size={16}/>, label: '单视窗' }, { id: 'split', icon: <Columns size={16}/>, label: '分屏' }, { id: 'grid', icon: <Grid2X2 size={16}/>, label: '四宫格' }].map((mode: any) => (
@@ -527,21 +515,10 @@ export default function WorkstationPage() {
             ))}
           </div>
         </header>
-
         <main className="flex-1 p-2 sm:p-3 overflow-hidden">
           <div className={`grid gap-3 h-full w-full transition-all duration-300 ease-in-out ${gridClass}`}>
             {Array.from({ length: activeSlotCount }).map((_, index) => (
-              <ToolPanel 
-                key={index} 
-                panelId={index} 
-                currentToolId={slots[index]} 
-                // 🚀 核心修改：传入当前 Session 对应的历史记录
-                history={currentSession.histories[slots[index]] || []} 
-                isGenerating={isGenerating} 
-                onSwitchTool={(newId) => { const newSlots = [...slots]; newSlots[index] = newId; setSlots(newSlots); }} 
-                onSend={handleGlobalSend} 
-                onClearHistory={clearHistory} 
-              />
+              <ToolPanel key={index} panelId={index} currentToolId={slots[index]} history={currentSession.histories[slots[index]] || []} isGenerating={isGenerating} onSwitchTool={(newId) => { const newSlots = [...slots]; newSlots[index] = newId; setSlots(newSlots); }} onSend={handleGlobalSend} onClearHistory={clearHistory} />
             ))}
           </div>
         </main>
