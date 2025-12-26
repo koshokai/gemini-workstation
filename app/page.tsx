@@ -13,7 +13,7 @@ import {
   Plus, MessageSquareDashed, Layout, Menu, Edit3, Terminal, Code
 } from 'lucide-react';
 
-// ✅ 1. 初始化 Mermaid
+// ✅ Mermaid 初始化
 mermaid.initialize({ 
   startOnLoad: false, 
   theme: 'default', 
@@ -22,7 +22,7 @@ mermaid.initialize({
 });
 
 // -----------------------------------------------------------------------------
-// 🧩 基础组件 (保持稳定)
+// 🧩 基础组件 (稳定版)
 // -----------------------------------------------------------------------------
 const MermaidChart = ({ code }: { code: string }) => {
   const [svg, setSvg] = useState('');
@@ -234,7 +234,7 @@ interface Session {
 }
 
 // -----------------------------------------------------------------------------
-// 📦 ToolPanel (🔥 核心修改：Drop&Send, Stop Button, CopyFix)
+// 📦 ToolPanel 
 // -----------------------------------------------------------------------------
 const ToolPanel = ({ 
   panelId, currentToolId, history, onSwitchTool, onSend, onStop, onClearHistory, isGenerating 
@@ -257,7 +257,7 @@ const ToolPanel = ({
   useEffect(() => { messagesEndRef.current?.scrollIntoView({ behavior: "smooth" }); }, [history, isGenerating]);
   useEffect(() => { if (textareaRef.current) { textareaRef.current.style.height = 'auto'; textareaRef.current.style.height = `${Math.min(textareaRef.current.scrollHeight, 120)}px`; } }, [input]);
 
-  // 🔥 辅助：处理文件读取的 Promise 包装器
+  // 🔥 辅助：读取文件 Promise
   const readFile = (file: File): Promise<any> => {
     return new Promise((resolve) => {
       const reader = new FileReader();
@@ -274,14 +274,14 @@ const ToolPanel = ({
     });
   };
 
-  // 🔥 处理文件选择（Input change）
+  // 🔥 Input 文件处理
   const handleFiles = async (fileList: FileList | null) => {
     if (!fileList) return;
     const processedFiles = await Promise.all(Array.from(fileList).map(readFile));
     setFiles(prev => [...prev, ...processedFiles]);
   };
 
-  // 🔥 手动点击发送
+  // 🔥 点击发送
   const handlePanelSend = (text: string = input) => {
     if (!text.trim() && files.length === 0) return;
     onSend(tool.id, text, files);
@@ -293,25 +293,22 @@ const ToolPanel = ({
   const handleDragOver = (e: React.DragEvent) => { e.preventDefault(); setIsDragOver(true); };
   const handleDragLeave = (e: React.DragEvent) => { if (e.currentTarget.contains(e.relatedTarget as Node)) return; setIsDragOver(false); };
   
-  // 🔥🔥🔥 核心修改：拖拽即发送 (Drag & Auto Send)
+  // 🔥🔥🔥 拖拽即发送 (Drag & Auto Send)
   const handleDrop = async (e: React.DragEvent) => {
     e.preventDefault(); e.stopPropagation(); setIsDragOver(false);
     
     const droppedFiles = e.dataTransfer.files;
     const droppedText = e.dataTransfer.getData('text/plain');
 
-    // 1. 如果是文件：读取 -> 立即发送
     if (droppedFiles && droppedFiles.length > 0) {
       const processed = await Promise.all(Array.from(droppedFiles).map(readFile));
       onSend(tool.id, "", processed); // 立即发送
     } 
-    // 2. 如果是文字：立即发送
     else if (droppedText) {
       onSend(tool.id, droppedText, []); // 立即发送
     }
   };
 
-  // 按钮禁用状态：只有在空闲且无内容时才禁用
   const isButtonDisabled = !isGenerating && !input.trim() && files.length === 0;
 
   return (
@@ -355,9 +352,9 @@ const ToolPanel = ({
                   ))}
                 </div>
               )}
-              {/* 🔥🔥🔥 核心修复：分离 draggable 和 内容容器，允许文本选择 */}
+              {/* 可选择和拖拽的容器 */}
               <div className={`relative px-3 py-2 rounded-xl text-sm shadow-sm transition-shadow hover:shadow-md ${msg.role === 'user' ? 'bg-slate-800 text-white rounded-tr-sm' : 'bg-white border border-slate-100 text-slate-700 rounded-tl-sm select-text'}`}>
-                {/* 仅把手图标可拖拽 */}
+                {/* 仅把手可拖拽 */}
                 <div 
                   draggable 
                   onDragStart={(e) => handleDragStart(e, msg.content)}
@@ -366,8 +363,6 @@ const ToolPanel = ({
                 >
                   <GripVertical size={14} />
                 </div>
-                
-                {/* 内容区域：无 draggable 干扰，可自由复制 */}
                 {msg.role === 'assistant' ? <TypewriterEffect content={msg.content} isTyping={!!msg.isTyping} /> : <span className="whitespace-pre-wrap select-text">{msg.content}</span>}
               </div>
               {msg.role === 'assistant' && msg.suggestions?.length! > 0 && (
@@ -408,7 +403,7 @@ const ToolPanel = ({
             onKeyDown={(e) => { if(e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handlePanelSend(); } }}
             style={{ minHeight: '36px', maxHeight: '120px' }}
           />
-          {/* 🔥🔥🔥 核心修复：停止按钮显式为红色，且逻辑清晰 */}
+          {/* 🔥 独立控制的停止按钮 */}
           <button 
             onClick={() => isGenerating ? onStop() : handlePanelSend()} 
             disabled={isButtonDisabled} 
@@ -424,17 +419,20 @@ const ToolPanel = ({
 };
 
 // -----------------------------------------------------------------------------
-// 🚀 主页面
+// 🚀 主页面 (核心修改：Slot State)
 // -----------------------------------------------------------------------------
 export default function WorkstationPage() {
   const [layout, setLayout] = useState<'single' | 'split' | 'grid'>('grid');
   const [slots, setSlots] = useState(['chat', 'data', 'flow', 'image']);
-  const [isGenerating, setIsGenerating] = useState(false);
+  
+  // ✅ 修改1：将 isGenerating (bool) 改为 activeSlot (number | null)
+  // 用于追踪哪个面板正在工作，避免“全员亮灯”
+  const [activeSlot, setActiveSlot] = useState<number | null>(null);
+  
   const [sessions, setSessions] = useState<Session[]>([ { id: '1', title: '新的话题', histories: { chat: [], image: [], flow: [], data: [], notebook: [] }, createdAt: Date.now() } ]);
   const [currentSessionId, setCurrentSessionId] = useState<string>('1');
   const [showSidebar, setShowSidebar] = useState(true);
   
-  // 🎮 中止控制器
   const abortControllerRef = useRef<AbortController | null>(null);
 
   const currentSession = sessions.find(s => s.id === currentSessionId) || sessions[0];
@@ -462,25 +460,33 @@ export default function WorkstationPage() {
     } catch (e) { console.error('Auto title failed', e); }
   };
 
-  // 🛑 停止生成
+  // 🛑 停止逻辑：清除 activeSlot
   const handleStop = () => {
     if (abortControllerRef.current) {
       abortControllerRef.current.abort();
       abortControllerRef.current = null;
-      setIsGenerating(false);
     }
+    setActiveSlot(null); // ✅ 恢复所有按钮状态
   };
 
-  const handleGlobalSend = async (toolId: string, userText: string, files: any[]) => {
+  // ✅ 修改2：接收 panelIndex，只锁定当前面板
+  const handleGlobalSend = async (panelIndex: number, toolId: string, userText: string, files: any[]) => {
+    
+    // 如果已有任务在运行，先强制停止旧的（或者你可以选择禁用，这里选择打断旧的，聚焦新的）
+    if (activeSlot !== null) {
+       handleStop();
+    }
+    
     const sessionId = currentSessionId;
     const isFirstMessage = Object.values(currentSession.histories).every(h => h.length === 0);
     if (isFirstMessage && userText.length > 0) generateTitle(sessionId, userText);
 
     const newMessage: Message = { role: 'user', content: userText, attachments: files };
     setSessions(prev => prev.map(s => s.id === sessionId ? { ...s, histories: { ...s.histories, [toolId]: [...(s.histories[toolId] || []), newMessage, { role: 'assistant', content: '', isTyping: true }] } } : s));
-    setIsGenerating(true);
+    
+    // ✅ 标记当前工作的面板索引
+    setActiveSlot(panelIndex);
 
-    // ✅ 初始化 AbortController
     const controller = new AbortController();
     abortControllerRef.current = controller;
 
@@ -493,7 +499,7 @@ export default function WorkstationPage() {
         method: 'POST', 
         headers: { 'Content-Type': 'application/json' }, 
         body: JSON.stringify({ message: userText, history: historyStr, files: files, modelName: tool.model, systemInstruction: tool.systemPrompt }),
-        signal: controller.signal // 👈 关键：绑定 Signal
+        signal: controller.signal 
       });
        
       if (!res.ok) throw new Error('API Error');
@@ -527,12 +533,10 @@ export default function WorkstationPage() {
       }));
     } catch (e: any) { 
       if (e.name === 'AbortError') {
-        console.log('用户手动停止生成');
-        // 可选：在消息中追加 [已停止] 标记
+        console.log('Stopped');
       } else {
         console.error(e); 
       }
-      // 停止光标
       setSessions(prev => prev.map(s => {
         if (s.id !== sessionId) return s;
         const newToolHistory = [...s.histories[toolId]];
@@ -542,7 +546,11 @@ export default function WorkstationPage() {
         }
         return { ...s, histories: { ...s.histories, [toolId]: newToolHistory } };
       }));
-    } finally { setIsGenerating(false); abortControllerRef.current = null; }
+    } finally { 
+      // ✅ 任务结束，释放状态
+      setActiveSlot(null); 
+      abortControllerRef.current = null; 
+    }
   };
 
   const clearHistory = (toolId: string) => { setSessions(prev => prev.map(s => s.id === currentSessionId ? { ...s, histories: { ...s.histories, [toolId]: [] } } : s)); };
@@ -590,9 +598,11 @@ export default function WorkstationPage() {
               <ToolPanel 
                 key={index} panelId={index} currentToolId={slots[index]} 
                 history={currentSession.histories[slots[index]] || []} 
-                isGenerating={isGenerating} 
+                // ✅ 修改3：只当 activeSlot 等于当前索引时，才传入 true
+                isGenerating={activeSlot === index} 
                 onSwitchTool={(newId) => { const newSlots = [...slots]; newSlots[index] = newId; setSlots(newSlots); }} 
-                onSend={handleGlobalSend} 
+                // ✅ 修改4：传递 index 给 handleGlobalSend
+                onSend={(tid, txt, files) => handleGlobalSend(index, tid, txt, files)} 
                 onStop={handleStop} 
                 onClearHistory={clearHistory} 
               />
