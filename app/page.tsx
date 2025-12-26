@@ -22,39 +22,25 @@ mermaid.initialize({
 });
 
 // -----------------------------------------------------------------------------
-// 🧩 组件：流程图渲染器 (🔥 修复核心：增加防抖，防止闪烁)
+// 🧩 基础组件 (保持稳定)
 // -----------------------------------------------------------------------------
 const MermaidChart = ({ code }: { code: string }) => {
   const [svg, setSvg] = useState('');
-  const [isRendering, setIsRendering] = useState(false); // 标记渲染状态
+  const [isRendering, setIsRendering] = useState(false);
   const [copyStatus, setCopyStatus] = useState<'idle' | 'copying' | 'copied'>('idle');
   const containerRef = useRef<HTMLDivElement>(null);
 
-  // 🛡️ 防抖渲染逻辑
   useEffect(() => {
-    // 如果代码太短，不渲染
     if (!code || code.length < 10) return;
-
-    // 设置定时器，延迟 1000ms 再渲染
-    // 这样当 AI 正在快速打字时，不会频繁触发重绘
     const timer = setTimeout(async () => {
       setIsRendering(true);
       try {
-        // 1. 预检查语法（如果语法不对，直接跳过，保留上一帧画面，防止闪烁）
         await mermaid.parse(code); 
-        
-        // 2. 渲染
         const id = `mermaid-${Math.random().toString(36).substr(2, 9)}`;
         const { svg } = await mermaid.render(id, code);
-        setSvg(svg); // 只有成功了才更新画面
-      } catch (err) {
-        // 渲染失败（比如代码没写完），什么都不做，保持显示上一帧的图
-        // 这样用户就不会看到“图突然没了”的闪烁情况
-      } finally {
-        setIsRendering(false);
-      }
-    }, 1000); // 👈 1秒防抖，这是“稳如老狗”的关键
-
+        setSvg(svg);
+      } catch (err) { } finally { setIsRendering(false); }
+    }, 1000);
     return () => clearTimeout(timer);
   }, [code]);
 
@@ -102,7 +88,6 @@ const MermaidChart = ({ code }: { code: string }) => {
     document.body.appendChild(a); a.click(); document.body.removeChild(a);
   };
   
-  // 如果第一次渲染还没出来，显示 Loading，之后就一直显示图表
   if (!svg && isRendering) return <div className="text-xs text-slate-400 p-3 font-mono bg-slate-50 border rounded-lg flex items-center gap-2"><span className="w-2 h-2 bg-indigo-400 rounded-full animate-pulse"></span>图表绘制中...</div>;
 
   return (
@@ -116,9 +101,6 @@ const MermaidChart = ({ code }: { code: string }) => {
   );
 };
 
-// -----------------------------------------------------------------------------
-// 📝 组件：代码块 (带复制)
-// -----------------------------------------------------------------------------
 const CodeBlock = ({ children, className }: { children: React.ReactNode, className?: string }) => {
   const [copied, setCopied] = useState(false);
   const handleCopy = () => {
@@ -137,9 +119,6 @@ const CodeBlock = ({ children, className }: { children: React.ReactNode, classNa
   );
 };
 
-// -----------------------------------------------------------------------------
-// 📊 组件：表格包装器 (带复制)
-// -----------------------------------------------------------------------------
 const TableWrapper = ({ children }: { children: React.ReactNode }) => {
   const [copied, setCopied] = useState(false);
   const tableRef = useRef<HTMLDivElement>(null);
@@ -168,9 +147,6 @@ const TableWrapper = ({ children }: { children: React.ReactNode }) => {
   );
 }
 
-// -----------------------------------------------------------------------------
-// ✨ 打字机效果
-// -----------------------------------------------------------------------------
 const TypewriterEffect = ({ content, isTyping }: { content: string, isTyping: boolean }) => {
   const [displayedContent, setDisplayedContent] = useState('');
   useEffect(() => {
@@ -207,15 +183,41 @@ const TypewriterEffect = ({ content, isTyping }: { content: string, isTyping: bo
 };
 
 // -----------------------------------------------------------------------------
-// 🛠️ 工具配置
+// 🛠️ 工具配置 (🔥 移除深度思考，修复按钮颜色)
 // -----------------------------------------------------------------------------
 const TOOLS = [
-  { id: 'chat', name: '全能助手', icon: <MessageSquare size={16} />, model: 'gemini-3-flash-preview', color: 'text-blue-600', bg: 'bg-blue-50', border: 'border-blue-200', placeholder: '有什么我可以帮你的吗？', systemPrompt: `全能助手。简练回答。结尾生成3个追问 ///Q1|Q2|Q3` },
-  { id: 'image', name: '创意画图', icon: <ImageIcon size={16} />, model: 'gemini-3-pro-image-preview', color: 'text-pink-600', bg: 'bg-pink-50', border: 'border-pink-200', placeholder: '描述画面，生成图片...', systemPrompt: `Text-to-Image 接口。1.提炼英文Prompt。2.URL编码。3.输出: ![Img](https://image.pollinations.ai/prompt/{Prompt}?nologo=true) /// 风格优化 | 构图调整 | 变体` },
-  { id: 'flow', name: '流程图设计', icon: <Workflow size={16} />, model: 'gemini-3-pro-preview', color: 'text-orange-600', bg: 'bg-orange-50', border: 'border-orange-200', placeholder: '描述流程，我来画图...', systemPrompt: `流程图专家。Mermaid语法。必须包裹在 \`\`\`mermaid ... \`\`\` 中。 /// 优化流程 | 变为时序图 | 导出SVG` },
-  { id: 'data', name: '数据制表', icon: <Table size={16} />, model: 'gemini-3-flash-preview', color: 'text-green-600', bg: 'bg-green-50', border: 'border-green-200', placeholder: '输入数据，整理表格...', systemPrompt: `数据分析师。整理为 Markdown 表格。数字列右对齐(---:)。 /// 可视化 | 导出Excel | 深度分析` },
-  { id: 'notebook', name: '多模态分析', icon: <BookOpen size={16} />, model: 'gemini-3-pro-preview', color: 'text-emerald-600', bg: 'bg-emerald-50', border: 'border-emerald-200', placeholder: '拖入 代码/PDF/图片...', systemPrompt: `全能分析助手。阅读上传的文件。 /// 解释代码 | 总结文档 | 提取关键点` },
-  { id: 'research', name: '深度思考', icon: <Brain size={16} />, model: 'gemini-2.0-flash-thinking-exp-1219', color: 'text-indigo-600', bg: 'bg-indigo-50', border: 'border-indigo-200', placeholder: '深度推理任务...', systemPrompt: `深度推理专家。一步步思考。 /// 追问1 | 追问2 | 追问3` },
+  // 显式添加 btnBg 属性，确保 Tailwind 能扫描到颜色，防止按钮消失
+  { 
+    id: 'chat', name: '全能助手', icon: <MessageSquare size={16} />, 
+    model: 'gemini-3-flash-preview', 
+    color: 'text-blue-600', bg: 'bg-blue-50', border: 'border-blue-200', btnBg: 'bg-blue-600',
+    placeholder: '有什么我可以帮你的吗？', systemPrompt: `全能助手。简练回答。结尾生成3个追问 ///Q1|Q2|Q3` 
+  },
+  { 
+    id: 'image', name: '创意画图', icon: <ImageIcon size={16} />, 
+    model: 'gemini-3-pro-image-preview', 
+    color: 'text-pink-600', bg: 'bg-pink-50', border: 'border-pink-200', btnBg: 'bg-pink-600',
+    placeholder: '描述画面，生成图片...', systemPrompt: `Text-to-Image 接口。1.提炼英文Prompt。2.URL编码。3.输出: ![Img](https://image.pollinations.ai/prompt/{Prompt}?nologo=true) /// 风格优化 | 构图调整 | 变体` 
+  },
+  { 
+    id: 'flow', name: '流程图设计', icon: <Workflow size={16} />, 
+    model: 'gemini-3-pro-preview', 
+    color: 'text-orange-600', bg: 'bg-orange-50', border: 'border-orange-200', btnBg: 'bg-orange-600',
+    placeholder: '描述流程，我来画图...', systemPrompt: `流程图专家。Mermaid语法。必须包裹在 \`\`\`mermaid ... \`\`\` 中。 /// 优化流程 | 变为时序图 | 导出SVG` 
+  },
+  { 
+    id: 'data', name: '数据制表', icon: <Table size={16} />, 
+    model: 'gemini-3-flash-preview', 
+    color: 'text-green-600', bg: 'bg-green-50', border: 'border-green-200', btnBg: 'bg-green-600',
+    placeholder: '输入数据，整理表格...', systemPrompt: `数据分析师。整理为 Markdown 表格。数字列右对齐(---:)。 /// 可视化 | 导出Excel | 深度分析` 
+  },
+  { 
+    id: 'notebook', name: '多模态分析', icon: <BookOpen size={16} />, 
+    model: 'gemini-3-pro-preview', 
+    color: 'text-emerald-600', bg: 'bg-emerald-50', border: 'border-emerald-200', btnBg: 'bg-emerald-600',
+    placeholder: '拖入 代码/PDF/图片...', systemPrompt: `全能分析助手。阅读上传的文件。 /// 解释代码 | 总结文档 | 提取关键点` 
+  },
+  // ❌ 已删除：深度思考 (Research) 模块
 ];
 
 interface Message {
@@ -234,12 +236,17 @@ interface Session {
 }
 
 // -----------------------------------------------------------------------------
-// 📦 ToolPanel
+// 📦 ToolPanel (🔥 修复按钮禁用逻辑 & 停止功能)
 // -----------------------------------------------------------------------------
 const ToolPanel = ({ 
-  panelId, currentToolId, history, onSwitchTool, onSend, onClearHistory, isGenerating 
+  panelId, currentToolId, history, onSwitchTool, onSend, onStop, onClearHistory, isGenerating 
 }: { 
-  panelId: number, currentToolId: string, history: Message[], onSwitchTool: (id: string) => void, onSend: (toolId: string, text: string, files: any[]) => void, onClearHistory: (toolId: string) => void, isGenerating: boolean
+  panelId: number, currentToolId: string, history: Message[], 
+  onSwitchTool: (id: string) => void, 
+  onSend: (toolId: string, text: string, files: any[]) => void, 
+  onStop: () => void, // 👈 新增停止回调
+  onClearHistory: (toolId: string) => void, 
+  isGenerating: boolean
 }) => {
   const tool = TOOLS.find(t => t.id === currentToolId) || TOOLS[0];
   const [input, setInput] = useState('');
@@ -275,8 +282,13 @@ const ToolPanel = ({
   const handleDrop = (e: React.DragEvent) => {
     e.preventDefault(); e.stopPropagation(); setIsDragOver(false);
     const content = e.dataTransfer.getData('text/plain');
-    if (content) onSend(tool.id, content, []); // 🔥 拖拽即执行
+    if (content) onSend(tool.id, content, []);
   };
+
+  // 🔥 核心：按钮逻辑修正
+  // 1. 如果正在生成 (isGenerating)，按钮功能变为 Stop
+  // 2. 只有在 (非生成状态) 且 (输入框空) 时，按钮才禁用
+  const isButtonDisabled = !isGenerating && !input.trim() && files.length === 0;
 
   return (
     <div 
@@ -301,7 +313,7 @@ const ToolPanel = ({
         {history.length === 0 && (
           <div className="h-full flex flex-col items-center justify-center text-slate-300 opacity-60">
             <div className="scale-150 mb-2">{tool.icon}</div>
-            <p className="text-xs font-medium">拖拽气泡到这里，立即执行...</p>
+            <p className="text-xs font-medium">拖拽气泡到这里，松手即发送...</p>
           </div>
         )}
         {history.map((msg, idx) => (
@@ -361,8 +373,12 @@ const ToolPanel = ({
             onKeyDown={(e) => { if(e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handlePanelSend(); } }}
             style={{ minHeight: '36px', maxHeight: '120px' }}
           />
-          {/* ✅ 检查点：发送按钮依然健在 */}
-          <button onClick={() => handlePanelSend()} disabled={isGenerating || (!input.trim() && files.length === 0)} className={`p-2 rounded-lg text-white shadow-sm transition-all active:scale-90 disabled:opacity-50 disabled:scale-100 ${isGenerating ? 'bg-slate-400' : tool.color.replace('text', 'bg')}`}>
+          {/* ✅ 修复：使用 tool.btnBg 确保颜色存在；绑定 Stop 事件 */}
+          <button 
+            onClick={() => isGenerating ? onStop() : handlePanelSend()} 
+            disabled={isButtonDisabled} 
+            className={`p-2 rounded-lg text-white shadow-sm transition-all active:scale-90 disabled:opacity-50 disabled:scale-100 ${isGenerating ? 'bg-slate-400' : tool.btnBg}`}
+          >
             {isGenerating ? <StopCircle size={16} /> : <Send size={16} />}
           </button>
         </div>
@@ -372,15 +388,18 @@ const ToolPanel = ({
 };
 
 // -----------------------------------------------------------------------------
-// 🚀 主页面
+// 🚀 主页面 (实现 AbortController 中止逻辑)
 // -----------------------------------------------------------------------------
 export default function WorkstationPage() {
   const [layout, setLayout] = useState<'single' | 'split' | 'grid'>('grid');
   const [slots, setSlots] = useState(['chat', 'data', 'flow', 'image']);
   const [isGenerating, setIsGenerating] = useState(false);
-  const [sessions, setSessions] = useState<Session[]>([ { id: '1', title: '新的话题', histories: { chat: [], image: [], flow: [], data: [], notebook: [], research: [] }, createdAt: Date.now() } ]);
+  const [sessions, setSessions] = useState<Session[]>([ { id: '1', title: '新的话题', histories: { chat: [], image: [], flow: [], data: [], notebook: [] }, createdAt: Date.now() } ]);
   const [currentSessionId, setCurrentSessionId] = useState<string>('1');
   const [showSidebar, setShowSidebar] = useState(true);
+  
+  // 🎮 中止控制器 Ref
+  const abortControllerRef = useRef<AbortController | null>(null);
 
   const currentSession = sessions.find(s => s.id === currentSessionId) || sessions[0];
 
@@ -394,7 +413,7 @@ export default function WorkstationPage() {
 
   const createNewSession = () => {
     const newId = Date.now().toString();
-    setSessions(prev => [{ id: newId, title: '新对话', histories: { chat: [], image: [], flow: [], data: [], notebook: [], research: [] }, createdAt: Date.now() }, ...prev]);
+    setSessions(prev => [{ id: newId, title: '新对话', histories: { chat: [], image: [], flow: [], data: [], notebook: [] }, createdAt: Date.now() }, ...prev]);
     setCurrentSessionId(newId);
   };
 
@@ -407,6 +426,14 @@ export default function WorkstationPage() {
     } catch (e) { console.error('Auto title failed', e); }
   };
 
+  // 🛑 停止生成函数
+  const handleStop = () => {
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
+      setIsGenerating(false);
+    }
+  };
+
   const handleGlobalSend = async (toolId: string, userText: string, files: any[]) => {
     const sessionId = currentSessionId;
     const isFirstMessage = Object.values(currentSession.histories).every(h => h.length === 0);
@@ -416,14 +443,30 @@ export default function WorkstationPage() {
     setSessions(prev => prev.map(s => s.id === sessionId ? { ...s, histories: { ...s.histories, [toolId]: [...(s.histories[toolId] || []), newMessage, { role: 'assistant', content: '', isTyping: true }] } } : s));
     setIsGenerating(true);
 
+    // ✅ 初始化 AbortController
+    const controller = new AbortController();
+    abortControllerRef.current = controller;
+
     try {
       const tool = TOOLS.find(t => t.id === toolId) || TOOLS[0];
       const currentHistory = currentSession.histories[toolId] || [];
       const historyStr = currentHistory.slice(-6).map(m => `${m.role}: ${m.content}`).join('\n');
-      const res = await fetch('/api/chat/gemini', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ message: userText, history: historyStr, files: files, modelName: tool.model, systemInstruction: tool.systemPrompt }) });
-      const reader = res.body?.getReader(); const decoder = new TextDecoder(); let fullText = '';
+      
+      const res = await fetch('/api/chat/gemini', { 
+        method: 'POST', 
+        headers: { 'Content-Type': 'application/json' }, 
+        body: JSON.stringify({ message: userText, history: historyStr, files: files, modelName: tool.model, systemInstruction: tool.systemPrompt }),
+        signal: controller.signal // 👈 绑定信号
+      });
+      
+      const reader = res.body?.getReader(); 
+      const decoder = new TextDecoder(); 
+      let fullText = '';
+      
       while (true) {
-        const { value, done } = await reader!.read(); if (done) break; fullText += decoder.decode(value, { stream: true });
+        const { value, done } = await reader!.read(); 
+        if (done) break; 
+        fullText += decoder.decode(value, { stream: true });
         setSessions(prev => prev.map(s => {
           if (s.id !== sessionId) return s;
           const newToolHistory = [...s.histories[toolId]];
@@ -443,7 +486,24 @@ export default function WorkstationPage() {
         newToolHistory[newToolHistory.length - 1] = { role: 'assistant', content: cleanContent, suggestions, isTyping: false };
         return { ...s, histories: { ...s.histories, [toolId]: newToolHistory } };
       }));
-    } catch (e) { console.error(e); } finally { setIsGenerating(false); }
+    } catch (e: any) { 
+      // 处理中止和其他错误
+      if (e.name === 'AbortError') {
+        console.log('Generation stopped by user');
+      } else {
+        console.error(e); 
+      }
+      // 无论何种错误，停止打字机光标
+      setSessions(prev => prev.map(s => {
+        if (s.id !== sessionId) return s;
+        const newToolHistory = [...s.histories[toolId]];
+        const lastMsg = newToolHistory[newToolHistory.length - 1];
+        if (lastMsg?.isTyping) {
+           newToolHistory[newToolHistory.length - 1] = { ...lastMsg, isTyping: false };
+        }
+        return { ...s, histories: { ...s.histories, [toolId]: newToolHistory } };
+      }));
+    } finally { setIsGenerating(false); }
   };
 
   const clearHistory = (toolId: string) => { setSessions(prev => prev.map(s => s.id === currentSessionId ? { ...s, histories: { ...s.histories, [toolId]: [] } } : s)); };
@@ -488,7 +548,15 @@ export default function WorkstationPage() {
         <main className="flex-1 p-2 sm:p-3 overflow-hidden">
           <div className={`grid gap-3 h-full w-full transition-all duration-300 ease-in-out ${gridClass}`}>
             {Array.from({ length: activeSlotCount }).map((_, index) => (
-              <ToolPanel key={index} panelId={index} currentToolId={slots[index]} history={currentSession.histories[slots[index]] || []} isGenerating={isGenerating} onSwitchTool={(newId) => { const newSlots = [...slots]; newSlots[index] = newId; setSlots(newSlots); }} onSend={handleGlobalSend} onClearHistory={clearHistory} />
+              <ToolPanel 
+                key={index} panelId={index} currentToolId={slots[index]} 
+                history={currentSession.histories[slots[index]] || []} 
+                isGenerating={isGenerating} 
+                onSwitchTool={(newId) => { const newSlots = [...slots]; newSlots[index] = newId; setSlots(newSlots); }} 
+                onSend={handleGlobalSend} 
+                onStop={handleStop} // 👈 传递停止方法
+                onClearHistory={clearHistory} 
+              />
             ))}
           </div>
         </main>
