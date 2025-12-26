@@ -257,7 +257,6 @@ const ToolPanel = ({
   useEffect(() => { messagesEndRef.current?.scrollIntoView({ behavior: "smooth" }); }, [history, isGenerating]);
   useEffect(() => { if (textareaRef.current) { textareaRef.current.style.height = 'auto'; textareaRef.current.style.height = `${Math.min(textareaRef.current.scrollHeight, 120)}px`; } }, [input]);
 
-  // 🔥 辅助：读取文件 Promise
   const readFile = (file: File): Promise<any> => {
     return new Promise((resolve) => {
       const reader = new FileReader();
@@ -274,14 +273,12 @@ const ToolPanel = ({
     });
   };
 
-  // 🔥 Input 文件处理
   const handleFiles = async (fileList: FileList | null) => {
     if (!fileList) return;
     const processedFiles = await Promise.all(Array.from(fileList).map(readFile));
     setFiles(prev => [...prev, ...processedFiles]);
   };
 
-  // 🔥 点击发送
   const handlePanelSend = (text: string = input) => {
     if (!text.trim() && files.length === 0) return;
     onSend(tool.id, text, files);
@@ -293,7 +290,6 @@ const ToolPanel = ({
   const handleDragOver = (e: React.DragEvent) => { e.preventDefault(); setIsDragOver(true); };
   const handleDragLeave = (e: React.DragEvent) => { if (e.currentTarget.contains(e.relatedTarget as Node)) return; setIsDragOver(false); };
   
-  // 🔥🔥🔥 拖拽即发送 (Drag & Auto Send)
   const handleDrop = async (e: React.DragEvent) => {
     e.preventDefault(); e.stopPropagation(); setIsDragOver(false);
     
@@ -354,7 +350,6 @@ const ToolPanel = ({
               )}
               {/* 可选择和拖拽的容器 */}
               <div className={`relative px-3 py-2 rounded-xl text-sm shadow-sm transition-shadow hover:shadow-md ${msg.role === 'user' ? 'bg-slate-800 text-white rounded-tr-sm' : 'bg-white border border-slate-100 text-slate-700 rounded-tl-sm select-text'}`}>
-                {/* 仅把手可拖拽 */}
                 <div 
                   draggable 
                   onDragStart={(e) => handleDragStart(e, msg.content)}
@@ -403,7 +398,6 @@ const ToolPanel = ({
             onKeyDown={(e) => { if(e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handlePanelSend(); } }}
             style={{ minHeight: '36px', maxHeight: '120px' }}
           />
-          {/* 🔥 独立控制的停止按钮 */}
           <button 
             onClick={() => isGenerating ? onStop() : handlePanelSend()} 
             disabled={isButtonDisabled} 
@@ -419,14 +413,11 @@ const ToolPanel = ({
 };
 
 // -----------------------------------------------------------------------------
-// 🚀 主页面 (核心修改：Slot State)
+// 🚀 主页面
 // -----------------------------------------------------------------------------
 export default function WorkstationPage() {
   const [layout, setLayout] = useState<'single' | 'split' | 'grid'>('grid');
   const [slots, setSlots] = useState(['chat', 'data', 'flow', 'image']);
-  
-  // ✅ 修改1：将 isGenerating (bool) 改为 activeSlot (number | null)
-  // 用于追踪哪个面板正在工作，避免“全员亮灯”
   const [activeSlot, setActiveSlot] = useState<number | null>(null);
   
   const [sessions, setSessions] = useState<Session[]>([ { id: '1', title: '新的话题', histories: { chat: [], image: [], flow: [], data: [], notebook: [] }, createdAt: Date.now() } ]);
@@ -437,12 +428,42 @@ export default function WorkstationPage() {
 
   const currentSession = sessions.find(s => s.id === currentSessionId) || sessions[0];
 
+  // 🔥 专门增加：JSON清洗函数
+  const cleanJsonResponse = (text: string) => {
+    // 1. 如果是标准的 JSON 对象，直接解析提取
+    try {
+      const json = JSON.parse(text);
+      if (json && json.content) return json.content;
+    } catch (e) {
+      // JSON 解析失败，说明可能是流式传输中的片段
+    }
+
+    // 2. 如果检测到是流式传输的 JSON 格式 (例如 `{"content": "xxx...`)
+    // 使用正则提取 `content` 之后的内容，直到遇到结尾或当前位置
+    // 匹配 "content": " 之后的所有内容，并尝试去除尾部的 "}
+    const match = text.match(/"content":\s*"(.*)/s);
+    if (match) {
+      let content = match[1];
+      // 去除尾部的引号和花括号 (简单的清理)
+      content = content.replace(/\"\}?\s*$/, '');
+      // 处理转义字符 (简单反转义)
+      content = content.replace(/\\n/g, '\n').replace(/\\"/g, '"');
+      return content;
+    }
+
+    // 3. 如果都不是，返回原文本
+    return text;
+  };
+
   const parseResponse = (text: string) => {
-    const idx = text.lastIndexOf('///');
-    if (idx === -1) return { cleanContent: text, suggestions: [] };
-    const rawSuggestions = text.substring(idx + 3).trim();
+    // 先清洗 JSON
+    const cleanText = cleanJsonResponse(text);
+    
+    const idx = cleanText.lastIndexOf('///');
+    if (idx === -1) return { cleanContent: cleanText, suggestions: [] };
+    const rawSuggestions = cleanText.substring(idx + 3).trim();
     let suggestions = rawSuggestions.includes('|') ? rawSuggestions.split('|') : rawSuggestions.split(/(?:^|\s+)(?:\d+[\.、]\s*|[-•]\s+)/);
-    return { cleanContent: text.substring(0, idx).trim(), suggestions: suggestions.map(s => s.trim()).filter(s => s) };
+    return { cleanContent: cleanText.substring(0, idx).trim(), suggestions: suggestions.map(s => s.trim()).filter(s => s) };
   };
 
   const createNewSession = () => {
@@ -456,23 +477,22 @@ export default function WorkstationPage() {
       const res = await fetch('/api/chat/gemini', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ message: `请根据这句话总结一个非常简短的标题(5-10字以内)，不要任何标点符号：${firstMessage}`, modelName: 'gemini-3-flash-preview' }) });
       const reader = res.body?.getReader(); const decoder = new TextDecoder(); let title = '';
       while (true) { const { value, done } = await reader!.read(); if (done) break; title += decoder.decode(value); }
-      setSessions(prev => prev.map(s => s.id === sessionId ? { ...s, title: title.trim() } : s));
+      // 这里的 title 也可能被包在 JSON 里，同样处理一下
+      const cleanTitle = cleanJsonResponse(title);
+      setSessions(prev => prev.map(s => s.id === sessionId ? { ...s, title: cleanTitle.trim() } : s));
     } catch (e) { console.error('Auto title failed', e); }
   };
 
-  // 🛑 停止逻辑：清除 activeSlot
   const handleStop = () => {
     if (abortControllerRef.current) {
       abortControllerRef.current.abort();
       abortControllerRef.current = null;
     }
-    setActiveSlot(null); // ✅ 恢复所有按钮状态
+    setActiveSlot(null);
   };
 
-  // ✅ 修改2：接收 panelIndex，只锁定当前面板
   const handleGlobalSend = async (panelIndex: number, toolId: string, userText: string, files: any[]) => {
     
-    // 如果已有任务在运行，先强制停止旧的（或者你可以选择禁用，这里选择打断旧的，聚焦新的）
     if (activeSlot !== null) {
        handleStop();
     }
@@ -484,7 +504,6 @@ export default function WorkstationPage() {
     const newMessage: Message = { role: 'user', content: userText, attachments: files };
     setSessions(prev => prev.map(s => s.id === sessionId ? { ...s, histories: { ...s.histories, [toolId]: [...(s.histories[toolId] || []), newMessage, { role: 'assistant', content: '', isTyping: true }] } } : s));
     
-    // ✅ 标记当前工作的面板索引
     setActiveSlot(panelIndex);
 
     const controller = new AbortController();
@@ -512,18 +531,25 @@ export default function WorkstationPage() {
         const { value, done } = await reader!.read(); 
         if (done) break; 
         fullText += decoder.decode(value, { stream: true });
+        
+        // 🔥🔥🔥 实时清洗：即使是流式传输，也尝试提取 content 内部文字
+        const visibleText = cleanJsonResponse(fullText);
+
         setSessions(prev => prev.map(s => {
           if (s.id !== sessionId) return s;
           const newToolHistory = [...s.histories[toolId]];
           const lastMsg = newToolHistory[newToolHistory.length - 1];
           if (lastMsg.role === 'assistant') {
-             const splitIndex = fullText.indexOf('///');
-             const visibleContent = splitIndex !== -1 ? fullText.substring(0, splitIndex) : fullText;
-             newToolHistory[newToolHistory.length - 1] = { ...lastMsg, content: visibleContent, isTyping: true };
+             // 检查是否包含建议分割符，如果包含只显示前面的部分
+             const splitIndex = visibleText.indexOf('///');
+             const finalVisibleContent = splitIndex !== -1 ? visibleText.substring(0, splitIndex) : visibleText;
+             newToolHistory[newToolHistory.length - 1] = { ...lastMsg, content: finalVisibleContent, isTyping: true };
           }
           return { ...s, histories: { ...s.histories, [toolId]: newToolHistory } };
         }));
       }
+
+      // 🔥🔥🔥 最终解析
       const { cleanContent, suggestions } = parseResponse(fullText);
       setSessions(prev => prev.map(s => {
         if (s.id !== sessionId) return s;
@@ -547,7 +573,6 @@ export default function WorkstationPage() {
         return { ...s, histories: { ...s.histories, [toolId]: newToolHistory } };
       }));
     } finally { 
-      // ✅ 任务结束，释放状态
       setActiveSlot(null); 
       abortControllerRef.current = null; 
     }
@@ -598,10 +623,8 @@ export default function WorkstationPage() {
               <ToolPanel 
                 key={index} panelId={index} currentToolId={slots[index]} 
                 history={currentSession.histories[slots[index]] || []} 
-                // ✅ 修改3：只当 activeSlot 等于当前索引时，才传入 true
                 isGenerating={activeSlot === index} 
                 onSwitchTool={(newId) => { const newSlots = [...slots]; newSlots[index] = newId; setSlots(newSlots); }} 
-                // ✅ 修改4：传递 index 给 handleGlobalSend
                 onSend={(tid, txt, files) => handleGlobalSend(index, tid, txt, files)} 
                 onStop={handleStop} 
                 onClearHistory={clearHistory} 
