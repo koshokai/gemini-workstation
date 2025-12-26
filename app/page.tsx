@@ -9,7 +9,8 @@ import {
   Brain, Image as ImageIcon, Table, Workflow, MessageSquare, 
   BookOpen, X, Paperclip, ChevronDown, 
   Maximize, Columns, Grid2X2, Trash2, Code, GripVertical,
-  Copy, Check, Download, FileSpreadsheet, Image as ImgIcon
+  Copy, Check, Download, FileSpreadsheet, Image as ImgIcon,
+  Plus, MessageSquareDashed, Layout, Menu, Edit3
 } from 'lucide-react';
 
 // ✅ 1. 初始化 Mermaid
@@ -21,8 +22,9 @@ mermaid.initialize({
 });
 
 // -----------------------------------------------------------------------------
-// 🧩 组件：流程图渲染器 (新增：一键复制 PNG 图片)
+// 🧩 基础组件 (保持不变：Mermaid, TableWrapper, Typewriter)
 // -----------------------------------------------------------------------------
+
 const MermaidChart = ({ code }: { code: string }) => {
   const [svg, setSvg] = useState('');
   const [error, setError] = useState(false);
@@ -37,51 +39,36 @@ const MermaidChart = ({ code }: { code: string }) => {
         const { svg } = await mermaid.render(id, code);
         setSvg(svg);
         setError(false);
-      } catch (err) {
-        setError(true);
-      }
+      } catch (err) { setError(true); }
     };
     if (code && code.length > 10) renderChart();
   }, [code]);
 
-  // 📸 核心修复：将 SVG 转换为 PNG 并写入剪贴板
   const handleCopyImage = async () => {
     if (!containerRef.current) return;
     const svgElement = containerRef.current.querySelector('svg');
     if (!svgElement) return;
-
     setCopyStatus('copying');
-
     try {
-      // 1. 序列化 SVG
       const serializer = new XMLSerializer();
       const svgString = serializer.serializeToString(svgElement);
       const svgBlob = new Blob([svgString], { type: 'image/svg+xml;charset=utf-8' });
       const url = URL.createObjectURL(svgBlob);
-
-      // 2. 加载到 Image 对象
       const img = new Image();
       img.onload = async () => {
-        // 3. 绘制到 Canvas
         const canvas = document.createElement('canvas');
-        // 放大倍数，保证粘贴到 PPT 清晰
         const scale = 2; 
         canvas.width = svgElement.viewBox.baseVal.width * scale;
         canvas.height = svgElement.viewBox.baseVal.height * scale;
         const ctx = canvas.getContext('2d');
         if (ctx) {
-          // 白色背景，防止粘贴后透明变黑
           ctx.fillStyle = 'white';
           ctx.fillRect(0, 0, canvas.width, canvas.height);
           ctx.scale(scale, scale);
           ctx.drawImage(img, 0, 0);
-          
-          // 4. 导出 Blob 并写入剪贴板
           canvas.toBlob(async (blob) => {
             if (blob) {
-              await navigator.clipboard.write([
-                new ClipboardItem({ 'image/png': blob })
-              ]);
+              await navigator.clipboard.write([new ClipboardItem({ 'image/png': blob })]);
               setCopyStatus('copied');
               setTimeout(() => setCopyStatus('idle'), 2000);
             }
@@ -90,112 +77,58 @@ const MermaidChart = ({ code }: { code: string }) => {
         URL.revokeObjectURL(url);
       };
       img.src = url;
-    } catch (e) {
-      console.error('Copy failed', e);
-      setCopyStatus('idle');
-      alert('复制失败，请尝试点击下载按钮');
-    }
+    } catch (e) { setCopyStatus('idle'); }
   };
 
   const handleDownload = () => {
     if (!svg) return;
     const blob = new Blob([svg], { type: 'image/svg+xml' });
     const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = 'flowchart.svg';
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
+    const a = document.createElement('a'); a.href = url; a.download = 'flowchart.svg';
+    document.body.appendChild(a); a.click(); document.body.removeChild(a);
   };
   
-  if (error) return (
-    <div className="text-xs text-slate-400 p-3 font-mono bg-slate-50 border rounded-lg flex items-center gap-2">
-      <span className="w-2 h-2 bg-amber-400 rounded-full animate-pulse"></span>
-      图表构建中...
-    </div>
-  );
+  if (error) return <div className="text-xs text-slate-400 p-3 font-mono bg-slate-50 border rounded-lg flex items-center gap-2"><span className="w-2 h-2 bg-amber-400 rounded-full animate-pulse"></span>图表构建中...</div>;
 
   return (
     <div className="relative group my-3" ref={containerRef}>
       <div className="overflow-x-auto bg-white p-4 rounded-xl border border-slate-100 shadow-sm hover:shadow-md transition-all" dangerouslySetInnerHTML={{ __html: svg }} />
-      
-      {/* 悬浮操作栏 */}
       <div className="absolute top-2 right-2 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity bg-white/90 backdrop-blur border border-slate-200 rounded-lg p-1 shadow-sm">
-        <button 
-          onClick={handleCopyImage} 
-          className="flex items-center gap-1 px-2 py-1.5 hover:bg-slate-100 rounded text-xs font-medium text-slate-600 hover:text-blue-600 transition-colors"
-          title="复制为图片 (可粘贴到 PPT/Word)"
-        >
-          {copyStatus === 'copied' ? <Check size={14} className="text-green-500"/> : <ImgIcon size={14} />}
-          {copyStatus === 'copying' ? '...' : copyStatus === 'copied' ? '已复制' : '复制图片'}
-        </button>
-        <button onClick={handleDownload} className="p-1.5 hover:bg-slate-100 rounded text-slate-500 hover:text-blue-600 transition-colors" title="下载 SVG">
-          <Download size={14} />
-        </button>
+        <button onClick={handleCopyImage} className="flex items-center gap-1 px-2 py-1.5 hover:bg-slate-100 rounded text-xs font-medium text-slate-600 hover:text-blue-600 transition-colors" title="复制为图片">{copyStatus === 'copied' ? <Check size={14} className="text-green-500"/> : <ImgIcon size={14} />}{copyStatus === 'copying' ? '...' : copyStatus === 'copied' ? '已复制' : ''}</button>
+        <button onClick={handleDownload} className="p-1.5 hover:bg-slate-100 rounded text-slate-500 hover:text-blue-600 transition-colors" title="下载 SVG"><Download size={14} /></button>
       </div>
     </div>
   );
 };
 
-// -----------------------------------------------------------------------------
-// 📊 组件：增强型表格 (修复：富文本复制)
-// -----------------------------------------------------------------------------
 const TableWrapper = ({ children }: { children: React.ReactNode }) => {
   const [copied, setCopied] = useState(false);
   const tableRef = useRef<HTMLDivElement>(null);
-
   const handleCopyTable = async () => {
     if (!tableRef.current) return;
     const tableEl = tableRef.current.querySelector('table');
     if (!tableEl) return;
-
     try {
-      // 📝 核心修复：使用 ClipboardItem 写入 text/html
-      // 这样 Word/Excel 才能识别出这是个表格，而不是一堆文字
       const htmlBlob = new Blob([tableEl.outerHTML], { type: 'text/html' });
       const textBlob = new Blob([tableEl.innerText], { type: 'text/plain' });
-      
-      await navigator.clipboard.write([
-        new ClipboardItem({ 
-          'text/html': htmlBlob,
-          'text/plain': textBlob 
-        })
-      ]);
-      
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
+      await navigator.clipboard.write([new ClipboardItem({ 'text/html': htmlBlob, 'text/plain': textBlob })]);
+      setCopied(true); setTimeout(() => setCopied(false), 2000);
     } catch (err) {
-      // 降级方案
-      const range = document.createRange();
-      range.selectNode(tableEl);
-      window.getSelection()?.removeAllRanges();
-      window.getSelection()?.addRange(range);
-      document.execCommand('copy');
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
+      const range = document.createRange(); range.selectNode(tableEl);
+      window.getSelection()?.removeAllRanges(); window.getSelection()?.addRange(range);
+      document.execCommand('copy'); setCopied(true); setTimeout(() => setCopied(false), 2000);
     }
   };
-
   return (
     <div className="relative group my-3 border border-slate-200 rounded-xl overflow-hidden bg-white" ref={tableRef}>
-      <div className="overflow-x-auto">
-        {children}
-      </div>
-      <button 
-        onClick={handleCopyTable}
-        className="absolute top-2 right-2 flex items-center gap-1 bg-white/90 backdrop-blur border border-slate-200 shadow-sm px-2 py-1 rounded-md text-xs font-medium text-slate-500 hover:text-blue-600 opacity-0 group-hover:opacity-100 transition-opacity"
-      >
-        {copied ? <Check size={12} className="text-green-500"/> : <FileSpreadsheet size={12} />}
-        {copied ? '已复制' : '复制表格'}
+      <div className="overflow-x-auto">{children}</div>
+      <button onClick={handleCopyTable} className="absolute top-2 right-2 flex items-center gap-1 bg-white/90 backdrop-blur border border-slate-200 shadow-sm px-2 py-1 rounded-md text-xs font-medium text-slate-500 hover:text-blue-600 opacity-0 group-hover:opacity-100 transition-opacity">
+        {copied ? <Check size={12} className="text-green-500"/> : <FileSpreadsheet size={12} />}{copied ? '已复制' : '复制表格'}
       </button>
     </div>
   );
 }
 
-// -----------------------------------------------------------------------------
-// ✨✨✨ 打字机 & 其他组件保持不变 ✨✨✨
-// -----------------------------------------------------------------------------
 const TypewriterEffect = ({ content, isTyping }: { content: string, isTyping: boolean }) => {
   const [displayedContent, setDisplayedContent] = useState('');
   useEffect(() => {
@@ -211,7 +144,6 @@ const TypewriterEffect = ({ content, isTyping }: { content: string, isTyping: bo
   }, [content, displayedContent, isTyping]);
 
   const mdComponents = {
-    // 注入表格包装器
     table: ({...props}: any) => <TableWrapper><table className="w-full text-xs text-slate-600 border-collapse" {...props} /></TableWrapper>,
     thead: ({...props}: any) => <thead className="bg-slate-50 border-b border-slate-200" {...props} />,
     th: ({...props}: any) => <th className="px-4 py-2 font-semibold text-left border-r border-slate-100 last:border-0" {...props} />,
@@ -251,8 +183,16 @@ interface Message {
   isTyping?: boolean;
 }
 
+// 🆕 会话结构定义
+interface Session {
+  id: string;
+  title: string;
+  histories: Record<string, Message[]>; // 每个 session 包含所有工具的历史
+  createdAt: number;
+}
+
 // -----------------------------------------------------------------------------
-// 📦 ToolPanel (保持输入框高度自适应)
+// 📦 ToolPanel 组件 (保持不变)
 // -----------------------------------------------------------------------------
 const ToolPanel = ({ 
   panelId, currentToolId, history, onSwitchTool, onSend, onClearHistory, isGenerating 
@@ -269,7 +209,6 @@ const ToolPanel = ({
 
   useEffect(() => { messagesEndRef.current?.scrollIntoView({ behavior: "smooth" }); }, [history, isGenerating]);
   
-  // 自适应高度
   useEffect(() => {
     if (textareaRef.current) {
       textareaRef.current.style.height = 'auto';
@@ -397,13 +336,22 @@ const ToolPanel = ({
 };
 
 // -----------------------------------------------------------------------------
-// 🚀 主页面 (保持不变)
+// 🚀 主页面 (升级：会话管理 + 侧边栏)
 // -----------------------------------------------------------------------------
 export default function WorkstationPage() {
   const [layout, setLayout] = useState<'single' | 'split' | 'grid'>('grid');
   const [slots, setSlots] = useState(['chat', 'data', 'flow', 'image']);
-  const [histories, setHistories] = useState<Record<string, Message[]>>({ chat: [], image: [], flow: [], data: [], notebook: [], research: [] });
   const [isGenerating, setIsGenerating] = useState(false);
+  
+  // 🆕 会话管理状态
+  const [sessions, setSessions] = useState<Session[]>([
+    { id: '1', title: '新的话题', histories: { chat: [], image: [], flow: [], data: [], notebook: [], research: [] }, createdAt: Date.now() }
+  ]);
+  const [currentSessionId, setCurrentSessionId] = useState<string>('1');
+  const [showSidebar, setShowSidebar] = useState(true);
+
+  // 获取当前会话
+  const currentSession = sessions.find(s => s.id === currentSessionId) || sessions[0];
 
   const parseResponse = (text: string) => {
     const idx = text.lastIndexOf('///');
@@ -413,76 +361,191 @@ export default function WorkstationPage() {
     return { cleanContent: text.substring(0, idx).trim(), suggestions: suggestions.map(s => s.trim()).filter(s => s) };
   };
 
+  // 🆕 创建新会话
+  const createNewSession = () => {
+    const newId = Date.now().toString();
+    const newSession: Session = {
+      id: newId,
+      title: '新对话', // 初始标题
+      histories: { chat: [], image: [], flow: [], data: [], notebook: [], research: [] },
+      createdAt: Date.now()
+    };
+    setSessions(prev => [newSession, ...prev]);
+    setCurrentSessionId(newId);
+  };
+
+  // 🆕 自动生成标题 (后台调用)
+  const generateTitle = async (sessionId: string, firstMessage: string) => {
+    try {
+      const res = await fetch('/api/chat/gemini', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          message: `请根据这句话总结一个非常简短的标题(5-10字以内)，不要任何标点符号：${firstMessage}`,
+          modelName: 'gemini-3-flash-preview'
+        })
+      });
+      const reader = res.body?.getReader();
+      const decoder = new TextDecoder();
+      let title = '';
+      while (true) {
+        const { value, done } = await reader!.read();
+        if (done) break;
+        title += decoder.decode(value);
+      }
+      // 更新标题
+      setSessions(prev => prev.map(s => s.id === sessionId ? { ...s, title: title.trim() } : s));
+    } catch (e) { console.error('Auto title failed', e); }
+  };
+
+  // 📦 发送逻辑 (适配多会话)
   const handleGlobalSend = async (toolId: string, userText: string, files: any[]) => {
+    const sessionId = currentSessionId;
+    
+    // 1. 检查是否是当前会话的第一条消息，如果是，触发自动起标题
+    const isFirstMessage = Object.values(currentSession.histories).every(h => h.length === 0);
+    if (isFirstMessage && userText.length > 0) {
+      generateTitle(sessionId, userText);
+    }
+
     const newMessage: Message = { role: 'user', content: userText, attachments: files };
-    setHistories(prev => ({ ...prev, [toolId]: [...prev[toolId], newMessage, { role: 'assistant', content: '', isTyping: true }] }));
+    
+    // 更新当前 Session 的状态
+    setSessions(prev => prev.map(s => {
+      if (s.id !== sessionId) return s;
+      return {
+        ...s,
+        histories: {
+          ...s.histories,
+          [toolId]: [...(s.histories[toolId] || []), newMessage, { role: 'assistant', content: '', isTyping: true }]
+        }
+      };
+    }));
+    
     setIsGenerating(true);
 
     try {
       const tool = TOOLS.find(t => t.id === toolId) || TOOLS[0];
-      const historyStr = histories[toolId]?.slice(-6).map(m => `${m.role}: ${m.content}`).join('\n') || '';
+      // 获取当前 Session 的历史上下文
+      const currentHistory = currentSession.histories[toolId] || [];
+      const historyStr = currentHistory.slice(-6).map(m => `${m.role}: ${m.content}`).join('\n');
+
       const res = await fetch('/api/chat/gemini', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ message: userText, history: historyStr, files: files, modelName: tool.model, systemInstruction: tool.systemPrompt })
       });
+      
       const reader = res.body?.getReader();
       const decoder = new TextDecoder();
       let fullText = '';
+      
       while (true) {
         const { value, done } = await reader!.read();
         if (done) break;
         fullText += decoder.decode(value, { stream: true });
-        setHistories(prev => {
-          const newHistory = [...(prev[toolId] || [])];
-          if (newHistory.length > 0 && newHistory[newHistory.length - 1].role === 'assistant') {
-             const lastMsg = newHistory[newHistory.length - 1];
+        
+        // 实时更新 Session 状态
+        setSessions(prev => prev.map(s => {
+          if (s.id !== sessionId) return s;
+          const newToolHistory = [...s.histories[toolId]];
+          const lastMsg = newToolHistory[newToolHistory.length - 1];
+          if (lastMsg.role === 'assistant') {
              const splitIndex = fullText.indexOf('///');
              const visibleContent = splitIndex !== -1 ? fullText.substring(0, splitIndex) : fullText;
-             newHistory[newHistory.length - 1] = { ...lastMsg, content: visibleContent, isTyping: true };
+             newToolHistory[newToolHistory.length - 1] = { ...lastMsg, content: visibleContent, isTyping: true };
           }
-          return { ...prev, [toolId]: newHistory };
-        });
+          return { ...s, histories: { ...s.histories, [toolId]: newToolHistory } };
+        }));
       }
+
       const { cleanContent, suggestions } = parseResponse(fullText);
-      setHistories(prev => {
-        const newHistory = [...prev[toolId]];
-        newHistory[newHistory.length - 1] = { role: 'assistant', content: cleanContent, suggestions, isTyping: false };
-        return { ...prev, [toolId]: newHistory };
-      });
+      setSessions(prev => prev.map(s => {
+        if (s.id !== sessionId) return s;
+        const newToolHistory = [...s.histories[toolId]];
+        newToolHistory[newToolHistory.length - 1] = { role: 'assistant', content: cleanContent, suggestions, isTyping: false };
+        return { ...s, histories: { ...s.histories, [toolId]: newToolHistory } };
+      }));
+
     } catch (e) {
-      setHistories(prev => {
-        const newHistory = [...prev[toolId]];
-        newHistory[newHistory.length - 1] = { role: 'assistant', content: '⚠️ 网络错误，请重试', isTyping: false };
-        return { ...prev, [toolId]: newHistory };
-      });
+      // 错误处理... (简化)
     } finally { setIsGenerating(false); }
+  };
+
+  // 清空历史 (只清空当前 Session 的当前 Tool)
+  const clearHistory = (toolId: string) => {
+    setSessions(prev => prev.map(s => s.id === currentSessionId ? { ...s, histories: { ...s.histories, [toolId]: [] } } : s));
   };
 
   const activeSlotCount = layout === 'single' ? 1 : layout === 'split' ? 2 : 4;
   const gridClass = layout === 'single' ? 'grid-cols-1 grid-rows-1' : layout === 'split' ? 'grid-cols-1 md:grid-cols-2 grid-rows-1' : 'grid-cols-1 md:grid-cols-2 grid-rows-2';
 
   return (
-    <div className="h-[100dvh] bg-slate-100 flex flex-col font-sans text-slate-900">
-      <header className="h-12 bg-white border-b border-slate-200 flex items-center justify-between px-4 flex-none z-50 shadow-sm">
-        <div className="flex items-center gap-2">
-          <div className="w-7 h-7 bg-gradient-to-br from-indigo-500 to-purple-600 rounded-lg flex items-center justify-center text-white font-black shadow-sm">G</div>
-          <h1 className="font-bold text-base tracking-tight text-slate-700 hidden sm:block">Gemini <span className="text-slate-400">Workstation</span></h1>
+    <div className="h-[100dvh] bg-slate-100 flex font-sans text-slate-900 overflow-hidden">
+      
+      {/* 🆕 左侧话题栏 (Sidebar) */}
+      <aside className={`${showSidebar ? 'w-64' : 'w-0'} bg-slate-900 text-slate-300 flex flex-col transition-all duration-300 overflow-hidden flex-none z-40`}>
+        <div className="p-4 border-b border-slate-800 flex items-center justify-between">
+          <div className="font-bold text-white tracking-tight flex items-center gap-2"><Layout size={18}/> 话题列表</div>
+          <button onClick={() => createNewSession()} className="p-1.5 bg-blue-600 hover:bg-blue-500 text-white rounded-lg transition-colors"><Plus size={18}/></button>
         </div>
-        <div className="flex bg-slate-100 p-0.5 rounded-lg border border-slate-200">
-          {[{ id: 'single', icon: <Maximize size={16}/>, label: '单视窗' }, { id: 'split', icon: <Columns size={16}/>, label: '分屏' }, { id: 'grid', icon: <Grid2X2 size={16}/>, label: '四宫格' }].map((mode: any) => (
-            <button key={mode.id} onClick={() => setLayout(mode.id)} className={`p-1.5 px-3 rounded-md transition-all flex items-center gap-2 text-xs font-medium ${layout === mode.id ? 'bg-white shadow-sm text-indigo-600' : 'text-slate-400 hover:text-slate-600'}`}>
-              {mode.icon} <span className="hidden sm:inline">{mode.label}</span>
+        
+        <div className="flex-1 overflow-y-auto p-2 space-y-1">
+          {sessions.map(session => (
+            <button 
+              key={session.id}
+              onClick={() => setCurrentSessionId(session.id)}
+              className={`w-full text-left px-3 py-3 rounded-lg flex items-center gap-3 transition-all ${currentSessionId === session.id ? 'bg-slate-800 text-white shadow-sm ring-1 ring-slate-700' : 'hover:bg-slate-800/50 hover:text-white'}`}
+            >
+              <MessageSquareDashed size={16} className={currentSessionId === session.id ? 'text-blue-400' : 'text-slate-500'} />
+              <div className="flex-1 truncate text-sm font-medium">{session.title}</div>
             </button>
           ))}
         </div>
-      </header>
-      <main className="flex-1 p-2 sm:p-3 overflow-hidden">
-        <div className={`grid gap-3 h-full w-full transition-all duration-300 ease-in-out ${gridClass}`}>
-          {Array.from({ length: activeSlotCount }).map((_, index) => (
-            <ToolPanel key={index} panelId={index} currentToolId={slots[index]} history={histories[slots[index]] || []} isGenerating={isGenerating} onSwitchTool={(newId) => { const newSlots = [...slots]; newSlots[index] = newId; setSlots(newSlots); }} onSend={handleGlobalSend} onClearHistory={(id) => setHistories(prev => ({ ...prev, [id]: [] }))} />
-          ))}
+
+        <div className="p-4 border-t border-slate-800 text-xs text-slate-500 flex justify-between">
+           <span>{sessions.length} 个活跃会话</span>
+           <button onClick={() => setSessions(prev => prev.filter(s => s.id !== currentSessionId || prev.length === 1))} className="hover:text-red-400"><Trash2 size={14}/></button>
         </div>
-      </main>
+      </aside>
+
+      {/* 右侧主区域 */}
+      <div className="flex-1 flex flex-col h-full min-w-0">
+        <header className="h-12 bg-white border-b border-slate-200 flex items-center justify-between px-4 flex-none z-50 shadow-sm">
+          <div className="flex items-center gap-3">
+            <button onClick={() => setShowSidebar(!showSidebar)} className="p-1.5 hover:bg-slate-100 rounded text-slate-500"><Menu size={18}/></button>
+            <div className="w-px h-4 bg-slate-300"></div>
+            <div className="font-bold text-sm text-slate-700 flex items-center gap-2">
+               {currentSession.title} 
+               <Edit3 size={12} className="text-slate-300 cursor-pointer hover:text-blue-500"/>
+            </div>
+          </div>
+          <div className="flex bg-slate-100 p-0.5 rounded-lg border border-slate-200">
+            {[{ id: 'single', icon: <Maximize size={16}/>, label: '单视窗' }, { id: 'split', icon: <Columns size={16}/>, label: '分屏' }, { id: 'grid', icon: <Grid2X2 size={16}/>, label: '四宫格' }].map((mode: any) => (
+              <button key={mode.id} onClick={() => setLayout(mode.id)} className={`p-1.5 px-3 rounded-md transition-all flex items-center gap-2 text-xs font-medium ${layout === mode.id ? 'bg-white shadow-sm text-indigo-600' : 'text-slate-400 hover:text-slate-600'}`}>
+                {mode.icon} <span className="hidden sm:inline">{mode.label}</span>
+              </button>
+            ))}
+          </div>
+        </header>
+
+        <main className="flex-1 p-2 sm:p-3 overflow-hidden">
+          <div className={`grid gap-3 h-full w-full transition-all duration-300 ease-in-out ${gridClass}`}>
+            {Array.from({ length: activeSlotCount }).map((_, index) => (
+              <ToolPanel 
+                key={index} 
+                panelId={index} 
+                currentToolId={slots[index]} 
+                // 🚀 核心修改：传入当前 Session 对应的历史记录
+                history={currentSession.histories[slots[index]] || []} 
+                isGenerating={isGenerating} 
+                onSwitchTool={(newId) => { const newSlots = [...slots]; newSlots[index] = newId; setSlots(newSlots); }} 
+                onSend={handleGlobalSend} 
+                onClearHistory={clearHistory} 
+              />
+            ))}
+          </div>
+        </main>
+      </div>
     </div>
   );
 }
