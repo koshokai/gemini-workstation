@@ -1,7 +1,14 @@
 import { NextRequest } from 'next/server';
-import { GoogleGenerativeAI } from '@google/generative-ai';
+import { 
+  GoogleGenerativeAI, 
+  HarmCategory, 
+  HarmBlockThreshold,
+  GenerativeModel
+} from '@google/generative-ai';
 
-export const dynamic = 'force-dynamic';
+// ⚡️ 优化 1: 使用 Edge Runtime
+// 这能让你的 API 突破 Vercel 的 10秒 限制，支持长时间的流式生成
+export const runtime = 'edge'; 
 
 export async function POST(request: NextRequest) {
   try {
@@ -12,10 +19,27 @@ export async function POST(request: NextRequest) {
 
     const genAI = new GoogleGenerativeAI(apiKey);
     
+    // 🛡️ 优化 2: 宽松的安全设置 (防止 AI 误报拒绝回答)
+    // 生产力工具通常需要处理各种内容，BLOCK_ONLY_HIGH 可以避免大部分误判
+    const safetySettings = [
+      { category: HarmCategory.HARM_CATEGORY_HARASSMENT, threshold: HarmBlockThreshold.BLOCK_ONLY_HIGH },
+      { category: HarmCategory.HARM_CATEGORY_HATE_SPEECH, threshold: HarmBlockThreshold.BLOCK_ONLY_HIGH },
+      { category: HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT, threshold: HarmBlockThreshold.BLOCK_ONLY_HIGH },
+      { category: HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT, threshold: HarmBlockThreshold.BLOCK_ONLY_HIGH },
+    ];
+
+    // ⚙️ 优化 3: 生成参数配置
+    const generationConfig = {
+      // temperature: 0.7 (平衡创造性与准确性，默认值通常不错，可按需调整)
+      // maxOutputTokens: 8192 (确保能输出长长长长的深度思考内容)
+    };
+
     // 初始化模型
     const model = genAI.getGenerativeModel({ 
-      model: modelName || "gemini-3-flash-preview",
-      systemInstruction: systemInstruction
+      model: modelName || "gemini-1.5-flash", // 建议默认用 1.5-flash，比 3-flash-preview 更稳定
+      systemInstruction: systemInstruction,
+      safetySettings: safetySettings,
+      // generationConfig: generationConfig // 如需微调可开启
     });
 
     const promptParts: any[] = [];
@@ -24,12 +48,12 @@ export async function POST(request: NextRequest) {
     if (files && files.length > 0) {
       files.forEach((file: any) => {
         if (file.isText) {
-          // 🅰️ 代码/文本文件：包装成清晰的文本块
+          // 🅰️ 代码/文本文件
           promptParts.push({
             text: `\n\n=== 📄 文件名: ${file.name} ===\n${file.data}\n=== 文件结束 ===\n\n`
           });
         } else {
-          // 🅱️ 图片/PDF：Base64 视觉输入
+          // 🅱️ 图片/PDF (Base64)
           promptParts.push({
             inlineData: {
               data: file.data,
@@ -45,11 +69,8 @@ export async function POST(request: NextRequest) {
       promptParts.push({ text: `历史对话参考:\n${history}\n\n` });
     }
 
-    // 3. 注入当前问题
-    // 3. 注入当前问题 (➕ 修改了这里，强制追加格式指令)
+    // 3. 注入当前问题 (保持你的 Prompt Injection 策略)
     if (message) {
-      // 这里的 tricks 是：在用户问题后，强行追加一段 Prompt
-      // 无论前端 System Prompt 写没写，这里都会再次强制执行
       const enforceFormatPrompt = `
       ${message}
       
@@ -80,6 +101,7 @@ export async function POST(request: NextRequest) {
           }
           controller.close();
         } catch (err) {
+          console.error("Stream Error:", err);
           controller.error(err);
         }
       },
@@ -90,7 +112,13 @@ export async function POST(request: NextRequest) {
     });
 
   } catch (error: any) {
-    console.error("API Error:", error);
-    return new Response(JSON.stringify({ error: error.message }), { status: 500 });
+    console.error("API Error Details:", error);
+    
+    // 友好的错误提示
+    let errorMessage = error.message;
+    if (error.message.includes("429")) errorMessage = "请求太频繁，请稍后再试 (Rate Limit)";
+    if (error.message.includes("SAFETY")) errorMessage = "内容被安全策略拦截，请尝试调整提问方式";
+
+    return new Response(JSON.stringify({ error: errorMessage }), { status: 500 });
   }
 }
