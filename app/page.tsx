@@ -10,7 +10,7 @@ import {
   BookOpen, X, Paperclip, ChevronDown, 
   Maximize, Columns, Grid2X2, Trash2, GripVertical,
   Copy, Check, Download, FileSpreadsheet, Image as ImgIcon,
-  Plus, MessageSquareDashed, Layout, Menu, Edit3, Terminal
+  Plus, MessageSquareDashed, Layout, Menu, Edit3, Terminal, Code
 } from 'lucide-react';
 
 // ✅ 1. 初始化 Mermaid
@@ -87,7 +87,7 @@ const MermaidChart = ({ code }: { code: string }) => {
     const a = document.createElement('a'); a.href = url; a.download = 'flowchart.svg';
     document.body.appendChild(a); a.click(); document.body.removeChild(a);
   };
-  
+   
   if (!svg && isRendering) return <div className="text-xs text-slate-400 p-3 font-mono bg-slate-50 border rounded-lg flex items-center gap-2"><span className="w-2 h-2 bg-indigo-400 rounded-full animate-pulse"></span>图表绘制中...</div>;
 
   return (
@@ -114,7 +114,7 @@ const CodeBlock = ({ children, className }: { children: React.ReactNode, classNa
         <div className="flex items-center gap-1.5"><Terminal size={12} className="text-slate-400"/><span className="text-[10px] font-mono text-slate-500">{className?.replace('language-', '') || 'text'}</span></div>
         <button onClick={handleCopy} className="flex items-center gap-1 text-[10px] text-slate-500 hover:text-blue-600 transition-colors">{copied ? <Check size={12} className="text-green-500"/> : <Copy size={12}/>}{copied ? '已复制' : '复制'}</button>
       </div>
-      <div className="p-3 overflow-x-auto text-xs font-mono leading-relaxed"><code className={className}>{children}</code></div>
+      <div className="p-3 overflow-x-auto text-xs font-mono leading-relaxed select-text"><code className={className}>{children}</code></div>
     </div>
   );
 };
@@ -139,7 +139,7 @@ const TableWrapper = ({ children }: { children: React.ReactNode }) => {
   };
   return (
     <div className="relative group my-3 border border-slate-200 rounded-xl overflow-hidden bg-white" ref={tableRef}>
-      <div className="overflow-x-auto">{children}</div>
+      <div className="overflow-x-auto select-text">{children}</div>
       <button onClick={handleCopyTable} className="absolute top-2 right-2 flex items-center gap-1 bg-white/90 backdrop-blur border border-slate-200 shadow-sm px-2 py-1 rounded-md text-xs font-medium text-slate-500 hover:text-blue-600 opacity-0 group-hover:opacity-100 transition-opacity">
         {copied ? <Check size={12} className="text-green-500"/> : <FileSpreadsheet size={12} />}{copied ? '已复制' : '复制表格'}
       </button>
@@ -175,7 +175,7 @@ const TypewriterEffect = ({ content, isTyping }: { content: string, isTyping: bo
   };
 
   return (
-    <div className="prose prose-xs max-w-none prose-p:my-1 prose-headings:my-2 relative">
+    <div className="prose prose-xs max-w-none prose-p:my-1 prose-headings:my-2 relative select-text">
       <ReactMarkdown remarkPlugins={[remarkGfm]} components={mdComponents}>{displayedContent}</ReactMarkdown>
       {isTyping && displayedContent.length < content.length && <span className="inline-block w-1.5 h-4 ml-0.5 bg-indigo-500 animate-pulse align-text-bottom rounded-sm"></span>}
     </div>
@@ -183,10 +183,9 @@ const TypewriterEffect = ({ content, isTyping }: { content: string, isTyping: bo
 };
 
 // -----------------------------------------------------------------------------
-// 🛠️ 工具配置 (🔥 移除深度思考，修复按钮颜色)
+// 🛠️ 工具配置
 // -----------------------------------------------------------------------------
 const TOOLS = [
-  // 显式添加 btnBg 属性，确保 Tailwind 能扫描到颜色，防止按钮消失
   { 
     id: 'chat', name: '全能助手', icon: <MessageSquare size={16} />, 
     model: 'gemini-3-flash-preview', 
@@ -217,7 +216,6 @@ const TOOLS = [
     color: 'text-emerald-600', bg: 'bg-emerald-50', border: 'border-emerald-200', btnBg: 'bg-emerald-600',
     placeholder: '拖入 代码/PDF/图片...', systemPrompt: `全能分析助手。阅读上传的文件。 /// 解释代码 | 总结文档 | 提取关键点` 
   },
-  // ❌ 已删除：深度思考 (Research) 模块
 ];
 
 interface Message {
@@ -236,7 +234,7 @@ interface Session {
 }
 
 // -----------------------------------------------------------------------------
-// 📦 ToolPanel (🔥 修复按钮禁用逻辑 & 停止功能)
+// 📦 ToolPanel (🔥 核心修改：Drop&Send, Stop Button, CopyFix)
 // -----------------------------------------------------------------------------
 const ToolPanel = ({ 
   panelId, currentToolId, history, onSwitchTool, onSend, onStop, onClearHistory, isGenerating 
@@ -244,7 +242,7 @@ const ToolPanel = ({
   panelId: number, currentToolId: string, history: Message[], 
   onSwitchTool: (id: string) => void, 
   onSend: (toolId: string, text: string, files: any[]) => void, 
-  onStop: () => void, // 👈 新增停止回调
+  onStop: () => void, 
   onClearHistory: (toolId: string) => void, 
   isGenerating: boolean
 }) => {
@@ -259,16 +257,31 @@ const ToolPanel = ({
   useEffect(() => { messagesEndRef.current?.scrollIntoView({ behavior: "smooth" }); }, [history, isGenerating]);
   useEffect(() => { if (textareaRef.current) { textareaRef.current.style.height = 'auto'; textareaRef.current.style.height = `${Math.min(textareaRef.current.scrollHeight, 120)}px`; } }, [input]);
 
-  const handleFiles = (fileList: FileList | null) => {
-    if (!fileList) return;
-    Array.from(fileList).forEach(file => {
+  // 🔥 辅助：处理文件读取的 Promise 包装器
+  const readFile = (file: File): Promise<any> => {
+    return new Promise((resolve) => {
       const reader = new FileReader();
       const isText = ['js','ts','py','txt','md','csv','json'].some(ext => file.name.endsWith(ext));
-      reader.onloadend = () => setFiles(prev => [...prev, { name: file.name, mimeType: isText ? 'text/plain' : file.type, data: isText ? reader.result : (reader.result as string).split(',')[1], isText }]);
+      reader.onloadend = () => {
+        resolve({ 
+          name: file.name, 
+          mimeType: isText ? 'text/plain' : file.type, 
+          data: isText ? reader.result : (reader.result as string).split(',')[1], 
+          isText 
+        });
+      };
       isText ? reader.readAsText(file) : reader.readAsDataURL(file);
     });
   };
 
+  // 🔥 处理文件选择（Input change）
+  const handleFiles = async (fileList: FileList | null) => {
+    if (!fileList) return;
+    const processedFiles = await Promise.all(Array.from(fileList).map(readFile));
+    setFiles(prev => [...prev, ...processedFiles]);
+  };
+
+  // 🔥 手动点击发送
   const handlePanelSend = (text: string = input) => {
     if (!text.trim() && files.length === 0) return;
     onSend(tool.id, text, files);
@@ -279,15 +292,26 @@ const ToolPanel = ({
   const handleDragStart = (e: React.DragEvent, content: string) => { e.dataTransfer.setData('text/plain', content); e.dataTransfer.effectAllowed = 'copy'; };
   const handleDragOver = (e: React.DragEvent) => { e.preventDefault(); setIsDragOver(true); };
   const handleDragLeave = (e: React.DragEvent) => { if (e.currentTarget.contains(e.relatedTarget as Node)) return; setIsDragOver(false); };
-  const handleDrop = (e: React.DragEvent) => {
+  
+  // 🔥🔥🔥 核心修改：拖拽即发送 (Drag & Auto Send)
+  const handleDrop = async (e: React.DragEvent) => {
     e.preventDefault(); e.stopPropagation(); setIsDragOver(false);
-    const content = e.dataTransfer.getData('text/plain');
-    if (content) onSend(tool.id, content, []);
+    
+    const droppedFiles = e.dataTransfer.files;
+    const droppedText = e.dataTransfer.getData('text/plain');
+
+    // 1. 如果是文件：读取 -> 立即发送
+    if (droppedFiles && droppedFiles.length > 0) {
+      const processed = await Promise.all(Array.from(droppedFiles).map(readFile));
+      onSend(tool.id, "", processed); // 立即发送
+    } 
+    // 2. 如果是文字：立即发送
+    else if (droppedText) {
+      onSend(tool.id, droppedText, []); // 立即发送
+    }
   };
 
-  // 🔥 核心：按钮逻辑修正
-  // 1. 如果正在生成 (isGenerating)，按钮功能变为 Stop
-  // 2. 只有在 (非生成状态) 且 (输入框空) 时，按钮才禁用
+  // 按钮禁用状态：只有在空闲且无内容时才禁用
   const isButtonDisabled = !isGenerating && !input.trim() && files.length === 0;
 
   return (
@@ -311,9 +335,9 @@ const ToolPanel = ({
 
       <div className="flex-1 overflow-y-auto p-3 space-y-3 bg-slate-50/30">
         {history.length === 0 && (
-          <div className="h-full flex flex-col items-center justify-center text-slate-300 opacity-60">
+          <div className="h-full flex flex-col items-center justify-center text-slate-300 opacity-60 pointer-events-none">
             <div className="scale-150 mb-2">{tool.icon}</div>
-            <p className="text-xs font-medium">拖拽气泡到这里，松手即发送...</p>
+            <p className="text-xs font-medium">拖拽 文字/图片 到这里直接发送</p>
           </div>
         )}
         {history.map((msg, idx) => (
@@ -331,9 +355,20 @@ const ToolPanel = ({
                   ))}
                 </div>
               )}
-              <div draggable onDragStart={(e) => handleDragStart(e, msg.content)} className={`px-3 py-2 rounded-xl text-sm shadow-sm cursor-grab active:cursor-grabbing relative ${msg.role === 'user' ? 'bg-slate-800 text-white rounded-tr-sm' : 'bg-white border border-slate-100 text-slate-700 rounded-tl-sm'} hover:shadow-md transition-shadow`}>
-                <div className="absolute -left-4 top-1/2 -translate-y-1/2 opacity-0 group-hover/msg:opacity-100 transition-opacity text-slate-300"><GripVertical size={12} /></div>
-                {msg.role === 'assistant' ? <TypewriterEffect content={msg.content} isTyping={!!msg.isTyping} /> : <span className="whitespace-pre-wrap">{msg.content}</span>}
+              {/* 🔥🔥🔥 核心修复：分离 draggable 和 内容容器，允许文本选择 */}
+              <div className={`relative px-3 py-2 rounded-xl text-sm shadow-sm transition-shadow hover:shadow-md ${msg.role === 'user' ? 'bg-slate-800 text-white rounded-tr-sm' : 'bg-white border border-slate-100 text-slate-700 rounded-tl-sm select-text'}`}>
+                {/* 仅把手图标可拖拽 */}
+                <div 
+                  draggable 
+                  onDragStart={(e) => handleDragStart(e, msg.content)}
+                  className={`absolute -left-5 top-1/2 -translate-y-1/2 p-1 cursor-grab active:cursor-grabbing opacity-0 group-hover/msg:opacity-100 transition-opacity text-slate-400 hover:text-blue-500`}
+                  title="拖拽此消息"
+                >
+                  <GripVertical size={14} />
+                </div>
+                
+                {/* 内容区域：无 draggable 干扰，可自由复制 */}
+                {msg.role === 'assistant' ? <TypewriterEffect content={msg.content} isTyping={!!msg.isTyping} /> : <span className="whitespace-pre-wrap select-text">{msg.content}</span>}
               </div>
               {msg.role === 'assistant' && msg.suggestions?.length! > 0 && (
                 <div className="flex flex-wrap gap-1.5 mt-1">
@@ -362,24 +397,25 @@ const ToolPanel = ({
         <div className="flex items-end gap-2">
           <button onClick={() => fileInputRef.current?.click()} className="p-2 text-slate-400 hover:bg-slate-50 hover:text-slate-600 rounded-lg transition-colors"><Paperclip size={16} /></button>
           <input type="file" multiple ref={fileInputRef} className="hidden" onChange={(e) => handleFiles(e.target.files)} />
-          
+           
           <textarea 
             ref={textareaRef}
             rows={1}
-            className={`flex-1 bg-slate-50 border-none rounded-lg px-3 py-2 text-xs sm:text-sm focus:ring-1 focus:ring-blue-500 outline-none resize-none overflow-y-auto ${isDragOver ? 'bg-white ring-2 ring-indigo-300 placeholder:text-indigo-400' : ''}`}
+            className={`flex-1 bg-slate-50 border-none rounded-lg px-3 py-2 text-xs sm:text-sm focus:ring-1 focus:ring-blue-500 outline-none resize-none overflow-y-auto select-text ${isDragOver ? 'bg-white ring-2 ring-indigo-300 placeholder:text-indigo-400' : ''}`}
             placeholder={isDragOver ? "松手即发送..." : tool.placeholder}
             value={input}
             onChange={(e) => setInput(e.target.value)}
             onKeyDown={(e) => { if(e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handlePanelSend(); } }}
             style={{ minHeight: '36px', maxHeight: '120px' }}
           />
-          {/* ✅ 修复：使用 tool.btnBg 确保颜色存在；绑定 Stop 事件 */}
+          {/* 🔥🔥🔥 核心修复：停止按钮显式为红色，且逻辑清晰 */}
           <button 
             onClick={() => isGenerating ? onStop() : handlePanelSend()} 
             disabled={isButtonDisabled} 
-            className={`p-2 rounded-lg text-white shadow-sm transition-all active:scale-90 disabled:opacity-50 disabled:scale-100 ${isGenerating ? 'bg-slate-400' : tool.btnBg}`}
+            className={`p-2 rounded-lg text-white shadow-sm transition-all active:scale-90 disabled:opacity-50 disabled:scale-100 ${isGenerating ? 'bg-red-500 hover:bg-red-600 animate-pulse' : tool.btnBg}`}
+            title={isGenerating ? "停止生成" : "发送"}
           >
-            {isGenerating ? <StopCircle size={16} /> : <Send size={16} />}
+            {isGenerating ? <StopCircle size={16} fill="currentColor" /> : <Send size={16} />}
           </button>
         </div>
       </div>
@@ -388,7 +424,7 @@ const ToolPanel = ({
 };
 
 // -----------------------------------------------------------------------------
-// 🚀 主页面 (实现 AbortController 中止逻辑)
+// 🚀 主页面
 // -----------------------------------------------------------------------------
 export default function WorkstationPage() {
   const [layout, setLayout] = useState<'single' | 'split' | 'grid'>('grid');
@@ -398,7 +434,7 @@ export default function WorkstationPage() {
   const [currentSessionId, setCurrentSessionId] = useState<string>('1');
   const [showSidebar, setShowSidebar] = useState(true);
   
-  // 🎮 中止控制器 Ref
+  // 🎮 中止控制器
   const abortControllerRef = useRef<AbortController | null>(null);
 
   const currentSession = sessions.find(s => s.id === currentSessionId) || sessions[0];
@@ -426,10 +462,11 @@ export default function WorkstationPage() {
     } catch (e) { console.error('Auto title failed', e); }
   };
 
-  // 🛑 停止生成函数
+  // 🛑 停止生成
   const handleStop = () => {
     if (abortControllerRef.current) {
       abortControllerRef.current.abort();
+      abortControllerRef.current = null;
       setIsGenerating(false);
     }
   };
@@ -451,18 +488,20 @@ export default function WorkstationPage() {
       const tool = TOOLS.find(t => t.id === toolId) || TOOLS[0];
       const currentHistory = currentSession.histories[toolId] || [];
       const historyStr = currentHistory.slice(-6).map(m => `${m.role}: ${m.content}`).join('\n');
-      
+       
       const res = await fetch('/api/chat/gemini', { 
         method: 'POST', 
         headers: { 'Content-Type': 'application/json' }, 
         body: JSON.stringify({ message: userText, history: historyStr, files: files, modelName: tool.model, systemInstruction: tool.systemPrompt }),
-        signal: controller.signal // 👈 绑定信号
+        signal: controller.signal // 👈 关键：绑定 Signal
       });
-      
+       
+      if (!res.ok) throw new Error('API Error');
+
       const reader = res.body?.getReader(); 
       const decoder = new TextDecoder(); 
       let fullText = '';
-      
+       
       while (true) {
         const { value, done } = await reader!.read(); 
         if (done) break; 
@@ -487,13 +526,13 @@ export default function WorkstationPage() {
         return { ...s, histories: { ...s.histories, [toolId]: newToolHistory } };
       }));
     } catch (e: any) { 
-      // 处理中止和其他错误
       if (e.name === 'AbortError') {
-        console.log('Generation stopped by user');
+        console.log('用户手动停止生成');
+        // 可选：在消息中追加 [已停止] 标记
       } else {
         console.error(e); 
       }
-      // 无论何种错误，停止打字机光标
+      // 停止光标
       setSessions(prev => prev.map(s => {
         if (s.id !== sessionId) return s;
         const newToolHistory = [...s.histories[toolId]];
@@ -503,7 +542,7 @@ export default function WorkstationPage() {
         }
         return { ...s, histories: { ...s.histories, [toolId]: newToolHistory } };
       }));
-    } finally { setIsGenerating(false); }
+    } finally { setIsGenerating(false); abortControllerRef.current = null; }
   };
 
   const clearHistory = (toolId: string) => { setSessions(prev => prev.map(s => s.id === currentSessionId ? { ...s, histories: { ...s.histories, [toolId]: [] } } : s)); };
@@ -526,8 +565,8 @@ export default function WorkstationPage() {
           ))}
         </div>
         <div className="p-4 border-t border-slate-800 text-xs text-slate-500 flex justify-between">
-           <span>{sessions.length} 个活跃会话</span>
-           <button onClick={() => setSessions(prev => prev.filter(s => s.id !== currentSessionId || prev.length === 1))} className="hover:text-red-400"><Trash2 size={14}/></button>
+            <span>{sessions.length} 个活跃会话</span>
+            <button onClick={() => setSessions(prev => prev.filter(s => s.id !== currentSessionId || prev.length === 1))} className="hover:text-red-400"><Trash2 size={14}/></button>
         </div>
       </aside>
       <div className="flex-1 flex flex-col h-full min-w-0">
@@ -554,7 +593,7 @@ export default function WorkstationPage() {
                 isGenerating={isGenerating} 
                 onSwitchTool={(newId) => { const newSlots = [...slots]; newSlots[index] = newId; setSlots(newSlots); }} 
                 onSend={handleGlobalSend} 
-                onStop={handleStop} // 👈 传递停止方法
+                onStop={handleStop} 
                 onClearHistory={clearHistory} 
               />
             ))}
